@@ -2,15 +2,22 @@
 """GnuCash の SQLite ファイルを読み書きする最小の Web サーバ（標準ライブラリのみ）。
 
 使い方:
-    python3 web/server.py gnucash.gnucash            # 読み取り専用
-    python3 web/server.py gnucash.gnucash --write    # 書き込み可（起動時にバックアップを作成）
+    python3 web/server.py                  # data/gnucash.gnucash を読み取り専用で開く
+    python3 web/server.py --write          # 書き込み可（起動時に data/backup/ へバックアップを作成）
+    python3 web/server.py other.gnucash    # 別のファイルを開く
+    docker compose up                                # Docker で起動（compose.yaml を参照）
+
+各オプションは環境変数 GNUCASH_FILE / GNUCASH_HOST / GNUCASH_PORT / GNUCASH_WRITE /
+GNUCASH_FORCE / GNUCASH_BACKUP_DIR でも指定できる（Docker 用）。
 
 スキーマは docs/gnucash-db-schema.md を参照。
 """
 import argparse
 import json
+import os
 import re
 import shutil
+import signal
 import sqlite3
 import sys
 import uuid
@@ -22,6 +29,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 STATIC_DIR = Path(__file__).parent / "static"
+# 既定のデータファイル（プロジェクト直下の data/。Git では管理しない）
+DEFAULT_FILE = Path(__file__).resolve().parent.parent / "data" / "gnucash.gnucash"
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 # post_date は 'YYYYMMDDHHMMSS' と 'YYYY-MM-DD HH:MM:SS' が混在するため、並べ替えには正規化した値を使う
@@ -601,21 +610,39 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self): self._handle("DELETE")
 
 
+def env_flag(name):
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def main():
     ap = argparse.ArgumentParser(description="GnuCash SQLite ファイルを Web で閲覧・編集する")
-    ap.add_argument("file", help="GnuCash の SQLite ファイル（.gnucash）")
-    ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--write", action="store_true", help="書き込みを許可する（起動時にバックアップを作成）")
-    ap.add_argument("--force", action="store_true", help="gnclock（デスクトップ版のロック）があっても書き込む")
+    ap.add_argument("file", nargs="?", default=os.environ.get("GNUCASH_FILE") or str(DEFAULT_FILE),
+                    help=f"GnuCash の SQLite ファイル（既定 {DEFAULT_FILE}）。環境変数 GNUCASH_FILE でも可")
+    ap.add_argument("--host", default=os.environ.get("GNUCASH_HOST", "127.0.0.1"),
+                    help="待ち受けアドレス（既定 127.0.0.1。Docker では 0.0.0.0）")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("GNUCASH_PORT", "8000")))
+    ap.add_argument("--write", action="store_true", default=env_flag("GNUCASH_WRITE"),
+                    help="書き込みを許可する（起動時にバックアップを作成）")
+    ap.add_argument("--force", action="store_true", default=env_flag("GNUCASH_FORCE"),
+                    help="gnclock（デスクトップ版のロック）があっても書き込む")
+    ap.add_argument("--backup-dir", default=os.environ.get("GNUCASH_BACKUP_DIR"),
+                    help="バックアップの保存先（既定はファイルと同じフォルダの backup/）")
     args = ap.parse_args()
 
+    # docker stop（SIGTERM）で速やかに終了する。PID 1 ではハンドラがないとシグナルが無視されるため
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
     path = Path(args.file).resolve()
+    if not path.is_file():
+        sys.exit(f"{path} が見つかりません（GnuCash ファイルを data/ に置くか、パスを指定してください）")
     with open(path, "rb") as f:
         if f.read(16) != b"SQLite format 3\x00":
             sys.exit(f"{path} は SQLite 形式ではありません（XML 形式の場合は GnuCash で「名前を付けて保存」→ sqlite3 で保存してください）")
 
     if args.write:
-        backup = path.with_name(f"{path.name}.{datetime.now():%Y%m%d%H%M%S}.bak")
+        backup_dir = Path(args.backup_dir).resolve() if args.backup_dir else path.parent / "backup"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        backup = backup_dir / f"{path.name}.{datetime.now():%Y%m%d%H%M%S}.bak"
         shutil.copy2(path, backup)
         print(f"バックアップ: {backup}")
 
@@ -626,8 +653,9 @@ def main():
         print(f"注意: gnclock にロックがあります {locks}"
               + ("（--force 指定のため書き込みます）" if args.force else "（書き込みは拒否されます）"))
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"{'書き込み可' if args.write else '読み取り専用'}で {path.name} を開きました → http://127.0.0.1:{args.port}/")
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    print(f"{'書き込み可' if args.write else '読み取り専用'}で {path.name} を開きました → http://{args.host}:{args.port}/",
+          flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

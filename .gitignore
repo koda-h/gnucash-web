@@ -1,0 +1,14 @@
+# 家計データ（GnuCash ファイル・バックアップ）は Git で管理しない
+/data/
+*.gnucash
+*.gnucash.*.bak
+*.gnucash.*.log
+
+# ローカル設定（.env.example をコピーして使う）
+.env
+
+# Python
+__pycache__/
+
+# macOS
+.DS_Store

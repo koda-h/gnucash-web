@@ -2,20 +2,55 @@
 
 GnuCash の SQLite ファイル（`.gnucash`）を直接読み書きする Web 版。Python 標準ライブラリのみで動く（追加インストール不要）。
 
+## データの置き場所
+
+GnuCash ファイルはプロジェクト直下の `data/` に置く。`data/` は `.gitignore` 済みで Git には入らない。
+
+```
+data/
+├── gnucash.gnucash      本体（GnuCash の SQLite ファイル）
+└── backup/              編集モードで起動するたびに作られるバックアップ
+```
+
+- シンボリックリンクではなく実体を置く（Docker のコンテナ内ではリンク先が見えないため）
+- GnuCash デスクトップと Web 版で同時に書き込まない。デスクトップ版で開いている間は、Web 版は書き込みを拒否する（`--force` を付けない場合）
+
 ## 起動
 
 ```bash
 # 読み取り専用（既定・ファイルを一切変更しない）
-python3 web/server.py gnucash.gnucash
+python3 web/server.py
 
-# 編集可能（起動時に gnucash.gnucash.YYYYMMDDHHMMSS.bak を作成）
-python3 web/server.py gnucash.gnucash --write
+# 編集可能（起動時に data/backup/gnucash.gnucash.YYYYMMDDHHMMSS.bak を作成）
+python3 web/server.py --write
 
-# GnuCash デスクトップのロック（gnclock）が残っていても書き込む
-python3 web/server.py gnucash.gnucash --write --force
+# 別のファイルを開く
+python3 web/server.py path/to/other.gnucash
 ```
 
 ブラウザで http://127.0.0.1:8000/ を開く（`--port` で変更可）。サーバは 127.0.0.1 のみで待ち受ける。
+
+GnuCash デスクトップのロック（`gnclock`）が残っていて書き込めない場合は、デスクトップ版を閉じていることを確認してから `--force` を付ける。
+
+## Docker（docker compose）で起動
+
+```bash
+cp .env.example .env      # 初回のみ
+docker compose up -d --build
+```
+
+http://127.0.0.1:8000/ を開く。停止は `docker compose down`、ログは `docker compose logs -f`。
+
+| 設定（.env） | 内容 |
+|---|---|
+| `GNUCASH_DATA_DIR` | GnuCash ファイルを置くフォルダ（既定 `./data`）。バックアップはその中の `backup/` に作られる |
+| `GNUCASH_FILE_NAME` | ファイル名（既定 `gnucash.gnucash`） |
+| `GNUCASH_WEB_PORT` | 公開ポート（既定 8000。127.0.0.1 のみで公開） |
+| `GNUCASH_WRITE` / `GNUCASH_FORCE` | `1` で `--write` / `--force` と同じ |
+| `GNUCASH_TZ` | 取引日の表示に使うタイムゾーン（既定 Asia/Tokyo）。UTC のままだと古い形式の日付が 1 日ずれる |
+
+- イメージには `web/` だけが入り、GnuCash ファイルやバックアップは含まれない（`.dockerignore`）
+- コード（`web/`）を変更したら `docker compose up -d --build` で作り直す
 
 ## 構成
 

@@ -4,7 +4,7 @@
     {
       "name": "gnucash-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["web/server.py", "gnucash.gnucash", "--write", "--force", "--port", "8765"],
+      "runtimeArgs": ["web/server.py", "data/gnucash.gnucash", "--write", "--port", "8765"],
       "port": 8765
     }
   ]
