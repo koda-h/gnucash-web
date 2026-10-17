@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>GnuCash Web モック</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f2f4f7; --hover:#f7f8fa;
+  --border:#e4e7ec; --border-strong:#d0d5dd;
+  --text:#101828; --muted:#667085; --faint:#98a2b3;
+  --accent:#3559e0; --accent-soft:#eef2ff; --accent-text:#2f4cc2;
+  --pos:#067647; --neg:#c4320a; --pos-soft:#ecfdf3; --neg-soft:#fef3f2;
+  --flash:#fff7d6;
+  --shadow:0 1px 2px rgba(16,24,40,.05);
+  --shadow-lg:0 8px 24px rgba(16,24,40,.10),0 2px 6px rgba(16,24,40,.06);
+  --radius:12px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --surface:#171a21; --surface-2:#1e222b; --hover:#1c2029;
+    --border:#272c36; --border-strong:#353b47;
+    --text:#e7e9ee; --muted:#9aa3b2; --faint:#6b7383;
+    --accent:#7c98ff; --accent-soft:#1e2540; --accent-text:#a9bbff;
+    --pos:#4ade80; --neg:#ff8a73; --pos-soft:#12261b; --neg-soft:#2c1714;
+    --flash:#3a3313;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    --shadow-lg:0 8px 24px rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --surface:#171a21; --surface-2:#1e222b; --hover:#1c2029;
+  --border:#272c36; --border-strong:#353b47;
+  --text:#e7e9ee; --muted:#9aa3b2; --faint:#6b7383;
+  --accent:#7c98ff; --accent-soft:#1e2540; --accent-text:#a9bbff;
+  --pos:#4ade80; --neg:#ff8a73; --pos-soft:#12261b; --neg-soft:#2c1714;
+  --flash:#3a3313;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  --shadow-lg:0 8px 24px rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.5 Inter,"Noto Sans JP",system-ui,-apple-system,"Hiragino Sans",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button,input{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh}
+
+/* ---------- Sidebar ---------- */
+.sidebar{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;align-items:center;gap:10px;padding:18px 20px 14px}
+.logo{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+.brand-name{font-weight:600;font-size:15px}
+.brand-sub{color:var(--muted);font-size:12px}
+.networth{margin:0 16px 12px;padding:14px 16px;border-radius:var(--radius);background:var(--surface-2)}
+.networth .lbl{font-size:12px;color:var(--muted)}
+.networth .val{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.networth .sub{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px}
+.tree-tools{display:flex;gap:8px;padding:0 16px 10px}
+.search{flex:1;position:relative}
+.search input{width:100%;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:0 10px 0 32px;outline:none}
+.search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search svg{position:absolute;left:10px;top:9px;color:var(--faint)}
+.icon-btn{height:34px;min-width:34px;border:1px solid var(--border);background:var(--surface);border-radius:8px;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:0 8px}
+.icon-btn:hover{background:var(--hover);color:var(--text)}
+.tree{flex:1;overflow:auto;padding:4px 8px 24px}
+.group-h{display:flex;justify-content:space-between;align-items:baseline;padding:14px 12px 6px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted)}
+.group-h .num{font-size:12px;letter-spacing:0;font-weight:500}
+.trow{display:flex;align-items:center;gap:6px;height:34px;padding:0 10px 0 calc(6px + var(--d) * 16px);border-radius:8px;cursor:pointer;user-select:none}
+.trow:hover{background:var(--hover)}
+.trow.sel{background:var(--accent-soft);color:var(--accent-text)}
+.trow.sel .tbal{color:var(--accent-text)}
+.chev{width:20px;height:20px;border:0;background:none;padding:0;cursor:pointer;color:var(--faint);display:grid;place-items:center;border-radius:4px;flex:none}
+.chev:hover{color:var(--text);background:var(--surface-2)}
+.chev svg{transition:transform .15s}
+.chev.open svg{transform:rotate(90deg)}
+.chev-sp{width:20px;flex:none}
+.tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow.ph .tname{font-weight:500}
+.tbal{color:var(--muted);font-size:13px}
+.tbal.neg{color:var(--neg)}
+mark{background:var(--flash);color:inherit;border-radius:2px}
+
+/* ---------- Main ---------- */
+.main{min-width:0;display:flex;flex-direction:column;min-height:0}
+.header{padding:22px 32px 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.back{display:none;border:0;background:none;color:var(--accent);padding:0;margin-bottom:8px;cursor:pointer;font-weight:500}
+.crumbs{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.crumbs button{border:0;background:none;padding:0;color:inherit;cursor:pointer}
+.crumbs button:hover{color:var(--accent)}
+.title{font-size:24px;font-weight:600;letter-spacing:-.01em;margin:2px 0 0;display:flex;align-items:center;gap:10px}
+.badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.desc{color:var(--muted);font-size:13px;margin-top:2px}
+.stats{display:flex;gap:28px}
+.stat .lbl{font-size:12px;color:var(--muted)}
+.stat .val{font-size:15px;font-weight:500}
+.stat.big .val{font-size:26px;font-weight:600;letter-spacing:-.01em}
+.toolbar{display:flex;gap:12px;align-items:center;padding:0 32px 14px;flex-wrap:wrap}
+.chips{display:flex;background:var(--surface-2);border-radius:9px;padding:3px}
+.chip{border:0;background:none;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--muted);font-size:13px}
+.chip.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-weight:500}
+.toolbar .search{max-width:280px}
+.spacer{flex:1}
+.btn{height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface);padding:0 14px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.ghost:hover{color:var(--text);background:var(--surface-2)}
+.btn.danger{border-color:transparent;background:none;color:var(--neg)}
+.btn.danger:hover{background:var(--neg-soft)}
+
+.card{margin:0 32px 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;flex:1;overflow:hidden}
+.cols{display:grid;grid-template-columns:118px minmax(160px,1.5fr) minmax(150px,1fr) 118px 118px 132px;gap:0 14px;align-items:center;padding:0 20px}
+.reg-head{height:40px;font-size:12px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);background:var(--surface)}
+.r{text-align:right}
+.scroll{overflow:auto;flex:1;min-height:0}
+.month{position:sticky;top:0;z-index:1;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--muted);padding:6px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.month .num{font-weight:500}
+.row{min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
+.row:hover{background:var(--hover)}
+.row.flash{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:var(--flash)}to{background:transparent}}
+.c-date{color:var(--muted)}
+.c-date .wd{font-size:11px;margin-left:4px;color:var(--faint)}
+.c-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-desc .ph{color:var(--faint)}
+.c-acct{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;padding:2px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted);vertical-align:middle}
+.c-in.gain{color:var(--pos)}
+.c-bal{font-weight:500}
+.c-bal.neg{color:var(--neg)}
+.empty{padding:56px 20px;text-align:center;color:var(--muted)}
+
+/* edit / composer */
+.edit{background:var(--accent-soft);border-bottom:1px solid var(--border);padding-top:10px;padding-bottom:10px;cursor:default}
+.composer{border-top:1px solid var(--border-strong);background:var(--surface);padding-top:12px;padding-bottom:12px}
+.composer-title{grid-column:1/-1;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.f{width:100%;height:34px;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface);padding:0 9px;outline:none;min-width:0}
+.f:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.f.r{text-align:right}
+.f.err{border-color:var(--neg);box-shadow:0 0 0 3px var(--neg-soft)}
+.f:disabled{background:var(--surface-2);color:var(--muted)}
+.bal-preview{text-align:right;color:var(--muted)}
+.bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-top:10px}
+.hint{font-size:12px;color:var(--faint)}
+.msg{font-size:12px;color:var(--neg)}
+kbd{font:11px Inter,sans-serif;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--surface)}
+
+/* overview (placeholder accounts) */
+.overview{padding:0 32px 32px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;overflow:auto}
+.ocard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;text-align:left;box-shadow:var(--shadow)}
+.ocard:hover{border-color:var(--accent)}
+.ocard .n{font-weight:500}
+.ocard .s{font-size:12px;color:var(--muted)}
+.ocard .v{font-size:18px;font-weight:600;margin-top:8px}
+
+/* 登録簿の幅が狭いときは 2 段表示（コンテナクエリ） */
+.card{container-type:inline-size;container-name:reg}
+@container reg (max-width: 760px){
+  .reg-head{display:none}
+  .cols{grid-template-columns:62px minmax(0,1fr) auto;gap:2px 10px;padding:0 16px}
+  .row{padding-top:8px;padding-bottom:8px}
+  .row .c-date{grid-area:1/1/3/2;align-self:start;font-size:13px;line-height:1.3}
+  .row .c-date .wd{display:block;margin:0}
+  .row .c-desc{grid-area:1/2/2/3}
+  .row .c-acct{grid-area:2/2/3/3}
+  .row .c-in,.row .c-out{grid-area:1/3/2/4}
+  .row .c-in:empty,.row .c-out:empty{display:none}
+  .row .inc::before{content:"+"}
+  .row .dec::before{content:"−"}
+  .row .c-bal{grid-area:2/3/3/4;font-size:12px;color:var(--muted);font-weight:400}
+  .row .c-bal.neg{color:var(--neg)}
+  .month{padding:6px 16px}
+  .edit.cols,.composer.cols{grid-template-columns:1fr 1fr;gap:8px}
+  .edit .e-date,.composer .e-date{grid-column:1/-1}
+  .edit .e-desc,.composer .e-desc,.edit .e-acct,.composer .e-acct{grid-column:1/-1}
+  .bal-preview{display:none}
+  .hint{display:none}
+  .composer:not(.open) > :not(.composer-title){display:none}
+  .composer:not(.open) .composer-title{margin:0;cursor:pointer;color:var(--accent);font-size:14px}
+  .composer:not(.open){padding-top:14px;padding-bottom:14px}
+}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:#101828;color:#fff;border-radius:10px;padding:10px 12px 10px 16px;display:flex;gap:14px;align-items:center;box-shadow:var(--shadow-lg);transition:.2s;z-index:10;font-size:13px}
+.toast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
+.toast button{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 820px){
+  .app{grid-template-columns:1fr}
+  .main{display:none}
+  .app.show-main .sidebar{display:none}
+  .app.show-main .main{display:flex}
+  .back{display:inline-block}
+  .header{padding:16px 16px 12px}
+  .toolbar{padding:0 16px 12px}
+  .toolbar .search{max-width:none;flex-basis:100%}
+  .card{margin:0 0 0;border-radius:0;border-left:0;border-right:0}
+  .overview{padding:0 16px 24px}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">G</div>
+      <div><div class="brand-name">GnuCash Web</div><div class="brand-sub">gnucash.gnucash（サンプルデータ）</div></div>
+    </div>
+    <div class="networth" id="networth"></div>
+    <div class="tree-tools">
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="treeQ" placeholder="勘定科目を検索" autocomplete="off">
+      </label>
+      <button class="icon-btn" id="toggleAll" title="すべて展開／折りたたみ">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
+      </button>
+    </div>
+    <nav class="tree" id="tree" role="tree"></nav>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo">元に戻す</button></div>
+<datalist id="acctList"></datalist>
+<datalist id="descList"></datalist>
+
+<script>
+/* =========================================================
+   データモデル（GnuCash の accounts / transactions / splits を簡略化）
+   - split.v は「借方 = 正 / 貸方 = 負」。1取引の合計は必ず 0
+   ========================================================= */
+const TODAY = '2026-10-12';
+const STORE_KEY = 'gnucash-web-mock-v1';
+
+const TYPES = {
+  ASSET:    {label:'資産',           credit:false, cols:['入金','出金']},
+  BANK:     {label:'銀行',           credit:false, cols:['入金','出金']},
+  CASH:     {label:'現金',           credit:false, cols:['入金','出金']},
+  CREDIT:   {label:'クレジットカード', credit:true,  cols:['返済','利用']},
+  LIABILITY:{label:'負債',           credit:true,  cols:['返済','借入']},
+  INCOME:   {label:'収益',           credit:true,  cols:['取消','収入']},
+  EXPENSE:  {label:'費用',           credit:false, cols:['支出','返金']},
+  EQUITY:   {label:'純資産',          credit:true,  cols:['減少','増加']},
+};
+
+// [guid, 名前, 種別, 親, placeholder, 説明]
+const ACCOUNTS = [
+  ['assets','資産','ASSET',null,1],
+  ['current','流動資産','ASSET','assets',1,'流動資産'],
+  ['cash','現金','CASH','current'],
+  ['bank','普通預金','BANK','current',1],
+  ['daiwa','大和ネクスト銀行','BANK','bank',0,'給与振込・カード引落'],
+  ['jibun','auじぶん銀行','BANK','bank'],
+  ['prepaid','プリペイドカード','ASSET','current',1],
+  ['aupay','au PAY','ASSET','prepaid'],
+  ['suica','Suica','ASSET','prepaid'],
+  ['waon','WAON','ASSET','prepaid'],
+  ['points','ポイント','ASSET','current',1],
+  ['rpoint','楽天ポイント','ASSET','points'],
+  ['apoint','Amazonポイント','ASSET','points'],
+  ['invest','投資','ASSET','assets',1],
+  ['rsec','楽天証券 預り金','ASSET','invest'],
+  ['liab','負債','LIABILITY',null,1],
+  ['cards','クレジットカード','CREDIT','liab',1],
+  ['rcard','楽天カード(VISA)','CREDIT','cards'],
+  ['tcard','TカードPrime(Mastercard)','CREDIT','cards'],
+  ['income','収益','INCOME',null,1],
+  ['salary','給与','INCOME','income'],
+  ['interest','普通預金利息','INCOME','income'],
+  ['dividend','株式配当金','INCOME','income'],
+  ['ptearn','ポイント獲得','INCOME','income'],
+  ['expense','費用','EXPENSE',null,1],
+  ['food','食費','EXPENSE','expense'],
+  ['daily','日用品','EXPENSE','expense'],
+  ['transport','交通費','EXPENSE','expense'],
+  ['phone','通信費','EXPENSE','expense'],
+  ['utility','水道光熱費','EXPENSE','expense'],
+  ['rent','住居費','EXPENSE','expense'],
+  ['hobby','趣味・娯楽','EXPENSE','expense'],
+  ['equity','純資産','EQUITY',null,1],
+  ['opening','開始残高','EQUITY','equity'],
+].map(([guid,name,type,parent,ph,description]) => ({guid,name,type,parent,placeholder:!!ph,description:description||''}));
+
+const A = Object.fromEntries(ACCOUNTS.map(a => [a.guid, a]));
+const CHILDREN = {};
+ACCOUNTS.forEach(a => (CHILDREN[a.parent||'ROOT'] ||= []).push(a.guid));
+const ROOTS = CHILDREN.ROOT;
+const path = id => { const p=[]; for(let a=A[id]; a; a=A[a.parent]) p.unshift(a.name); return p; };
+const fullName = id => path(id).join(':');
+const isCredit = id => TYPES[A[id].type].credit;
+const sign = id => isCredit(id) ? -1 : 1;
+
+/* ---------- サンプル取引を生成 ---------- */
+function seedTxns(){
+  let s = 20261012;
+  const rnd = () => { s |= 0; s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const pick = arr => arr[Math.floor(rnd()*arr.length)];
+  const between = (a,b,step=10) => Math.round((a + rnd()*(b-a))/step)*step;
+  const out = [];
+  const add = (date, desc, debit, credit, amt) => {
+    if (date > TODAY) return;
+    out.push({guid:uid(), date, desc, splits:[{a:debit,v:amt},{a:credit,v:-amt}]});
+  };
+  add('2026-04-30','開始残高','daiwa','opening',1250000);
+  add('2026-04-30','開始残高','jibun','opening',480000);
+  add('2026-04-30','開始残高','cash','opening',32000);
+  add('2026-04-30','開始残高','rsec','opening',300000);
+  add('2026-04-30','開始残高','suica','opening',2500);
+  add('2026-04-30','開始残高','rpoint','opening',8200);
+
+  const shops = {food:['スーパー','コンビニ','ランチ','パン屋','ドラッグストア（食品）','外食'], daily:['無印良品','ドラッグストア','ニトリ','100円ショップ'], hobby:['書籍','映画','Steam','カフェ']};
+  for (const m of ['05','06','07','08','09','10']) {
+    const d = day => `2026-${m}-${String(day).padStart(2,'0')}`;
+    add(d(25),'給与','daiwa','salary',285000);
+    add(d(27),'家賃','rent','daiwa',88000);
+    add(d(5),'ATM 引出','cash','daiwa',20000);
+    add(d(16),'電気・ガス','utility','rcard',between(7800,12800,1));
+    add(d(20),'携帯電話','phone','rcard',4980);
+    add(d(3),'Suica チャージ','suica','rcard',5000);
+    add(d(28),'楽天ポイント付与','rpoint','ptearn',between(600,1400,1));
+    add(d(30),'普通預金利息','daiwa','interest',between(1,800,1));
+    for (let i=0;i<9;i++) add(d(1+Math.floor(rnd()*28)), pick(shops.food), 'food', pick(['rcard','rcard','cash','waon','aupay']), between(300,4200,1));
+    for (let i=0;i<3;i++) add(d(1+Math.floor(rnd()*28)), pick(shops.daily), 'daily', pick(['rcard','tcard']), between(400,3800,1));
+    for (let i=0;i<5;i++) add(d(1+Math.floor(rnd()*28)), 'JR・地下鉄', 'transport', 'suica', between(170,700,1));
+    for (let i=0;i<2;i++) add(d(1+Math.floor(rnd()*28)), pick(shops.hobby), 'hobby', pick(['rcard','cash']), between(500,6000,1));
+    add(d(12),'WAON チャージ','waon','cash',3000);
+    add(d(8),'au PAY チャージ','aupay','jibun',5000);
+  }
+  // カード引落 = 前月利用額
+  const usage = (card, ym) => out.filter(t => t.date.startsWith(ym)).reduce((x,t) => x - t.splits.filter(s => s.a === card && s.v < 0).reduce((y,s) => y + s.v, 0), 0);
+  for (const [ym, prev] of [['05','04'],['06','05'],['07','06'],['08','07'],['09','08'],['10','09']]) {
+    const r = usage('rcard', '2026-'+prev), t = usage('tcard', '2026-'+prev);
+    if (r) add(`2026-${ym}-27`,'楽天カード 引落','rcard','daiwa',r);
+    if (t) add(`2026-${ym}-10`,'TカードPrime 引落','tcard','daiwa',t);
+  }
+  add('2026-06-20','ブシロード株 配当金','rsec','dividend',1000);
+  add('2026-09-30','ブシロード株 配当金','rsec','dividend',1000);
+  add('2026-07-15','証券口座へ入金','rsec','jibun',100000);
+  out.sort((a,b) => a.date.localeCompare(b.date));
+  out.forEach((t,i) => t.seq = i);
+  return out;
+}
+function uid(){ return [...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+
+/* ---------- 状態 ---------- */
+function load(){
+  try { const raw = localStorage.getItem(STORE_KEY); if (raw) return JSON.parse(raw); } catch(e){}
+  return seedTxns();
+}
+function persist(){ try { localStorage.setItem(STORE_KEY, JSON.stringify(state.txns)); } catch(e){} }
+
+const state = {
+  txns: load(),
+  selected: 'daiwa',
+  expanded: new Set(['assets','current','bank','liab','cards']),
+  editing: null,       // 編集中の transaction guid
+  period: 'all',
+  q: '',
+  treeQ: '',
+  flash: null,
+  lastDate: TODAY,
+  composerOpen: false, // 狭い画面での入力フォーム開閉
+};
+let seqCounter = Math.max(0, ...state.txns.map(t => t.seq||0)) + 1;
+
+/* ---------- 計算 ---------- */
+function balances(){
+  const own = Object.fromEntries(ACCOUNTS.map(a => [a.guid, 0]));
+  for (const t of state.txns) for (const s of t.splits) own[s.a] += s.v;
+  const total = {};
+  const walk = id => (total[id] = own[id] + (CHILDREN[id]||[]).reduce((x,c) => x + walk(c), 0));
+  ROOTS.forEach(walk);
+  return total;
+}
+function registerRows(aid){
+  const rows = [];
+  for (const t of state.txns) {
+    const mine = t.splits.filter(s => s.a === aid);
+    if (!mine.length) continue;
+    const others = t.splits.filter(s => s.a !== aid);
+    rows.push({t, amt: mine.reduce((x,s) => x + s.v, 0), other: others.length === 1 ? others[0].a : null, multi: others.length > 1});
+  }
+  rows.sort((x,y) => x.t.date.localeCompare(y.t.date) || x.t.seq - y.t.seq);
+  let bal = 0;
+  rows.forEach(r => r.bal = (bal += r.amt));
+  return rows;
+}
+
+/* ---------- 表示ヘルパ ---------- */
+const yen = n => (n < 0 ? '−' : '') + '¥' + Math.abs(n).toLocaleString('ja-JP');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const WD = ['日','月','火','水','木','金','土'];
+const fmtDate = iso => { const [y,m,d] = iso.split('-'); return `${m}/${d}<span class="wd">${WD[new Date(+y,m-1,+d).getDay()]}</span>`; };
+const parseAmt = s => { const v = String(s).replace(/[,，¥\s円]/g,'').replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0)-0xFEE0)); if (v === '') return 0; return /^\d+$/.test(v) ? +v : NaN; };
+const hl = (text, q) => { if (!q) return esc(text); const i = text.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(text) : esc(text.slice(0,i)) + '<mark>' + esc(text.slice(i,i+q.length)) + '</mark>' + esc(text.slice(i+q.length)); };
+const chevron = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 6 6 6-6 6"/></svg>';
+
+/* ---------- サイドバー ---------- */
+function renderSidebar(bal){
+  const assets = bal.assets, liab = -bal.liab;
+  document.getElementById('networth').innerHTML = `
+    <div class="lbl">純資産（資産 − 負債）</div>
+    <div class="val num">${yen(assets - liab)}</div>
+    <div class="sub num"><span>資産 ${yen(assets)}</span><span>負債 ${yen(liab)}</span></div>`;
+
+  const q = state.treeQ.trim();
+  const matches = id => A[id].name.toLowerCase().includes(q.toLowerCase()) || (CHILDREN[id]||[]).some(matches);
+  const node = (id, depth) => {
+    if (q && !matches(id)) return '';
+    const a = A[id], kids = CHILDREN[id] || [];
+    const open = q ? true : state.expanded.has(id);
+    const v = bal[id] * sign(id);
+    return `<div role="treeitem" aria-expanded="${kids.length ? open : ''}">
+      <div class="trow ${state.selected===id?'sel':''} ${a.placeholder?'ph':''}" data-id="${id}" style="--d:${depth}">
+        ${kids.length ? `<button class="chev ${open?'open':''}" data-toggle="${id}" aria-label="展開">${chevron}</button>` : '<span class="chev-sp"></span>'}
+        <span class="tname">${hl(a.name, q)}</span>
+        <span class="tbal num ${v<0?'neg':''}">${yen(v)}</span>
+      </div>
+      ${kids.length && open ? `<div role="group">${kids.map(c => node(c, depth+1)).join('')}</div>` : ''}
+    </div>`;
+  };
+  document.getElementById('tree').innerHTML = ROOTS.map(r => {
+    if (q && !matches(r)) return '';
+    return `<div class="group-h"><span>${A[r].name}</span><span class="num">${yen(bal[r]*sign(r))}</span></div>`
+      + (CHILDREN[r]||[]).map(c => node(c, 0)).join('');
+  }).join('') || '<div class="empty">該当する勘定科目がありません</div>';
+}
+
+/* ---------- メイン ---------- */
+function renderMain(bal){
+  const id = state.selected, a = A[id];
+  const crumbs = path(id).slice(0,-1);
+  const ids = []; for (let x=A[a.parent]; x; x=A[x.parent]) ids.unshift(x.guid);
+  const v = bal[id] * sign(id);
+  const header = `
+    <div class="header">
+      <div>
+        <button class="back" data-back>‹ 勘定科目一覧</button>
+        <div class="crumbs">${ids.map((p,i) => `<button data-go="${p}">${esc(crumbs[i])}</button><span>›</span>`).join('')}</div>
+        <h1 class="title">${esc(a.name)} <span class="badge">${TYPES[a.type].label}${a.placeholder?'・集計用':''}</span></h1>
+        ${a.description ? `<div class="desc">${esc(a.description)}</div>` : ''}
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>`;
+
+  if (a.placeholder) {
+    document.getElementById('main').innerHTML = header + `
+      <div class="toolbar"><span class="hint" style="display:inline">この科目は集計用です。取引は子科目に記録します。</span></div>
+      <div class="overview">${(CHILDREN[id]||[]).map(c => `
+        <button class="ocard" data-go="${c}">
+          <div class="n">${esc(A[c].name)}</div>
+          <div class="s">${TYPES[A[c].type].label}${CHILDREN[c] ? `・${CHILDREN[c].length} 科目` : ''}</div>
+          <div class="v num ${bal[c]*sign(c)<0?'neg':''}">${yen(bal[c]*sign(c))}</div>
+        </button>`).join('')}</div>`;
+    document.getElementById('stats').innerHTML = `<div class="stat big"><div class="lbl">合計残高</div><div class="val num">${yen(v)}</div></div>`;
+    return;
+  }
+
+  const [colL, colR] = TYPES[a.type].cols;
+  const all = registerRows(id);
+  const month = TODAY.slice(0,7);
+  const mL = all.filter(r => r.t.date.startsWith(month) && r.amt > 0).reduce((x,r) => x + r.amt, 0);
+  const mR = all.filter(r => r.t.date.startsWith(month) && r.amt < 0).reduce((x,r) => x - r.amt, 0);
+
+  const from = {all:'', month: month+'-01', q3: shiftMonth(TODAY,-3), year: TODAY.slice(0,4)+'-01-01'}[state.period];
+  const q = state.q.trim().toLowerCase();
+  const rows = all.filter(r => (!from || r.t.date >= from) &&
+    (!q || r.t.desc.toLowerCase().includes(q) || (r.other && fullName(r.other).toLowerCase().includes(q))));
+
+  let body = '', lastM = '';
+  for (const r of rows) {
+    const m = r.t.date.slice(0,7);
+    if (m !== lastM) {
+      const inM = rows.filter(x => x.t.date.startsWith(m));
+      const net = inM.reduce((x,y) => x + y.amt, 0) * sign(id);
+      body += `<div class="month"><span>${+m.slice(0,4)}年${+m.slice(5)}月</span><span class="num">${net>=0?'+':''}${yen(net)}</span></div>`;
+      lastM = m;
+    }
+    body += state.editing === r.t.guid ? editRow(r, colL, colR) : viewRow(r, id);
+  }
+  if (!rows.length) body = `<div class="empty">${all.length ? '条件に一致する取引がありません' : 'まだ取引がありません。下のフォームから追加できます。'}</div>`;
+
+  document.getElementById('main').innerHTML = header + `
+    <div class="toolbar">
+      <div class="chips" role="tablist">
+        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年']].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
+      </div>
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="regQ" placeholder="説明・勘定科目で絞り込み" value="${esc(state.q)}" autocomplete="off">
+      </label>
+      <span class="spacer"></span>
+      <button class="btn primary" data-new>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>取引を追加</button>
+    </div>
+    <div class="card">
+      <div class="cols reg-head"><span>日付</span><span>説明</span><span>勘定科目</span><span class="r">${colL}</span><span class="r">${colR}</span><span class="r">残高</span></div>
+      <div class="scroll" id="scroll">${body}</div>
+      ${composer(colL, colR, all.length ? all[all.length-1].bal : 0)}
+    </div>`;
+
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="lbl">今月の${colL}</div><div class="val num">${yen(mL)}</div></div>
+    <div class="stat"><div class="lbl">今月の${colR}</div><div class="val num">${yen(mR)}</div></div>
+    <div class="stat big"><div class="lbl">残高</div><div class="val num ${v<0?'neg':''}">${yen(v)}</div></div>`;
+}
+
+function viewRow(r, id){
+  const s = sign(id), bal = r.bal * s;
+  // 狭い表示の +/− は「残高が増えるか減るか」で決める。緑は資産への入金のみ
+  const eff = r.amt * s > 0 ? 'inc' : 'dec';
+  const gain = !isCredit(id) && A[id].type !== 'EXPENSE' && r.amt > 0 ? 'gain' : '';
+  const acct = r.multi ? '<span class="pill">複数の勘定科目</span>' : `<span class="pill" title="${esc(fullName(r.other))}">${esc(path(r.other).slice(-2).join(' › '))}</span>`;
+  return `<div class="cols row ${state.flash===r.t.guid?'flash':''}" data-edit="${r.t.guid}" tabindex="0">
+    <span class="c-date num">${fmtDate(r.t.date)}</span>
+    <span class="c-desc">${r.t.desc ? esc(r.t.desc) : '<span class="ph">（説明なし）</span>'}</span>
+    <span class="c-acct">${acct}</span>
+    <span class="c-in r num ${r.amt > 0 ? eff : ''} ${gain}">${r.amt > 0 ? yen(r.amt) : ''}</span>
+    <span class="c-out r num ${r.amt < 0 ? eff : ''}">${r.amt < 0 ? yen(-r.amt) : ''}</span>
+    <span class="c-bal r num ${bal<0?'neg':''}">${yen(bal)}</span>
+  </div>`;
+}
+
+function fields(vals, colL, colR, multi){
+  return `
+    <input class="f e-date" type="date" name="date" value="${vals.date}" aria-label="日付" required>
+    <input class="f e-desc" name="desc" value="${esc(vals.desc)}" placeholder="説明" aria-label="説明" list="descList" autocomplete="off">
+    <input class="f e-acct" name="acct" value="${esc(vals.acct)}" placeholder="勘定科目（例: 費用:食費）" aria-label="勘定科目" list="acctList" autocomplete="off" ${multi?'disabled':''}>
+    <input class="f r num e-l" name="l" value="${vals.l}" placeholder="${colL}" aria-label="${colL}" inputmode="numeric" autocomplete="off" ${multi?'disabled':''}>
+    <input class="f r num e-r" name="r" value="${vals.r}" placeholder="${colR}" aria-label="${colR}" inputmode="numeric" autocomplete="off" ${multi?'disabled':''}>`;
+}
+
+function editRow(r, colL, colR){
+  const vals = {date:r.t.date, desc:r.t.desc, acct: r.other ? fullName(r.other) : '', l: r.amt>0 ? r.amt.toLocaleString('ja-JP') : '', r: r.amt<0 ? (-r.amt).toLocaleString('ja-JP') : ''};
+  return `<form class="cols edit" data-form="edit" data-guid="${r.t.guid}" autocomplete="off">
+    ${fields(vals, colL, colR, r.multi)}
+    <span class="bal-preview num">${yen(r.bal*sign(state.selected))}</span>
+    <div class="bar">
+      <button type="button" class="btn danger" data-del="${r.t.guid}">削除</button>
+      <span class="msg" data-msg></span>
+      <span class="spacer"></span>
+      <span class="hint"><kbd>Enter</kbd> 保存　<kbd>Esc</kbd> キャンセル</span>
+      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="submit" class="btn primary">保存</button>
+    </div>
+  </form>`;
+}
+
+function composer(colL, colR, lastBal){
+  return `<form class="cols composer ${state.composerOpen?'open':''}" data-form="new" autocomplete="off">
+    <div class="composer-title" data-open-composer>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>新しい取引
+    </div>
+    ${fields({date:state.lastDate, desc:'', acct:'', l:'', r:''}, colL, colR, false)}
+    <span class="bal-preview num" data-preview data-base="${lastBal}">${yen(lastBal*sign(state.selected))}</span>
+    <div class="bar">
+      <span class="msg" data-msg></span>
+      <span class="spacer"></span>
+      <span class="hint">説明を入力すると過去の取引から勘定科目と金額を補完します　<kbd>Enter</kbd> 追加</span>
+      <button type="reset" class="btn ghost">クリア</button>
+      <button type="submit" class="btn primary">追加</button>
+    </div>
+  </form>`;
+}
+
+function shiftMonth(iso, n){ const d = new Date(iso); d.setMonth(d.getMonth()+n); return d.toISOString().slice(0,10); }
+
+/* ---------- 補完リスト ---------- */
+function renderLists(){
+  document.getElementById('acctList').innerHTML = ACCOUNTS.filter(a => !a.placeholder && a.guid !== state.selected)
+    .map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
+  const descs = [...new Set(state.txns.slice().reverse().map(t => t.desc).filter(Boolean))].slice(0,200);
+  document.getElementById('descList').innerHTML = descs.map(d => `<option value="${esc(d)}">`).join('');
+}
+
+function render({scrollBottom=false} = {}){
+  const bal = balances();
+  renderSidebar(bal);
+  renderMain(bal);
+  renderLists();
+  const sc = document.getElementById('scroll');
+  if (sc) {
+    if (scrollBottom) sc.scrollTop = sc.scrollHeight;
+    const f = sc.querySelector('.flash, form.edit');
+    if (f && !scrollBottom) f.scrollIntoView({block:'nearest'});
+  }
+}
+
+/* ---------- 入力の検証と保存 ---------- */
+function resolveAccount(text){
+  const t = text.trim(); if (!t) return null;
+  const exact = ACCOUNTS.find(a => fullName(a.guid) === t);
+  if (exact) return exact.guid;
+  const byName = ACCOUNTS.filter(a => a.name === t || fullName(a.guid).endsWith(':'+t));
+  return byName.length === 1 ? byName[0].guid : null;
+}
+
+function readForm(form, multi){
+  const g = n => form.elements[n];
+  [...form.querySelectorAll('.f')].forEach(el => el.classList.remove('err'));
+  const err = (el, m) => { el.classList.add('err'); el.focus(); form.querySelector('[data-msg]').textContent = m; return null; };
+  const date = g('date').value;
+  if (!date) return err(g('date'), '日付を入力してください');
+  const desc = g('desc').value.trim();
+  if (multi) return {date, desc};
+  const acct = resolveAccount(g('acct').value);
+  if (!acct) return err(g('acct'), '勘定科目を一覧から選んでください');
+  if (acct === state.selected) return err(g('acct'), '同じ勘定科目は選べません');
+  if (A[acct].placeholder) return err(g('acct'), '集計用の科目には記録できません');
+  const l = parseAmt(g('l').value), r = parseAmt(g('r').value);
+  if (isNaN(l)) return err(g('l'), '金額は数字で入力してください');
+  if (isNaN(r)) return err(g('r'), '金額は数字で入力してください');
+  if (l && r) return err(g('r'), 'どちらか一方だけ入力してください');
+  if (!l && !r) return err(g('l'), '金額を入力してください');
+  return {date, desc, acct, v: l - r};
+}
+
+function save(form){
+  const isNew = form.dataset.form === 'new';
+  const t0 = isNew ? null : state.txns.find(t => t.guid === form.dataset.guid);
+  const multi = t0 && t0.splits.filter(s => s.a !== state.selected).length > 1;
+  const d = readForm(form, multi);
+  if (!d) return;
+  if (isNew) {
+    const t = {guid: uid(), seq: seqCounter++, date: d.date, desc: d.desc,
+      splits: [{a: state.selected, v: d.v}, {a: d.acct, v: -d.v}]};
+    state.txns.push(t);
+    state.flash = t.guid;
+    state.lastDate = d.date;
+    state.period = state.period === 'all' || d.date >= TODAY.slice(0,7) ? state.period : 'all';
+  } else {
+    t0.date = d.date; t0.desc = d.desc;
+    if (!multi) t0.splits = [{a: state.selected, v: d.v}, {a: d.acct, v: -d.v}];
+    state.editing = null;
+    state.flash = t0.guid;
+  }
+  persist();
+  render({scrollBottom: isNew});
+  if (isNew) document.querySelector('form.composer [name=desc]')?.focus();
+  setTimeout(() => { state.flash = null; }, 1700);
+}
+
+/* 説明を入れたら過去の同じ説明の取引から補完（GnuCash の QuickFill 相当） */
+function quickfill(form){
+  if (form.dataset.form !== 'new') return;
+  const desc = form.elements.desc.value.trim(); if (!desc) return;
+  const prev = state.txns.slice().reverse().find(t => t.desc === desc && t.splits.length === 2 && t.splits.some(s => s.a === state.selected))
+            || state.txns.slice().reverse().find(t => t.desc === desc && t.splits.length === 2);
+  if (!prev) return;
+  const mine = prev.splits.find(s => s.a === state.selected);
+  const [x, y] = prev.splits;
+  const other = mine ? prev.splits.find(s => s !== mine).a : null;
+  if (!form.elements.acct.value && other) form.elements.acct.value = fullName(other);
+  if (!form.elements.l.value && !form.elements.r.value && mine) {
+    if (mine.v > 0) form.elements.l.value = mine.v.toLocaleString('ja-JP');
+    else form.elements.r.value = (-mine.v).toLocaleString('ja-JP');
+  }
+  updatePreview(form);
+}
+function updatePreview(form){
+  const p = form.querySelector('[data-preview]'); if (!p) return;
+  const l = parseAmt(form.elements.l.value) || 0, r = parseAmt(form.elements.r.value) || 0;
+  p.textContent = yen((+p.dataset.base + l - r) * sign(state.selected));
+}
+
+/* ---------- 削除と元に戻す ---------- */
+let undoBuf = null, toastTimer;
+function del(guid){
+  const i = state.txns.findIndex(t => t.guid === guid);
+  if (i < 0) return;
+  undoBuf = {t: state.txns[i], i};
+  state.txns.splice(i, 1);
+  state.editing = null;
+  persist(); render();
+  toast('取引を削除しました');
+}
+function toast(msg){
+  document.getElementById('toastMsg').textContent = msg;
+  const el = document.getElementById('toast');
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 5000);
+}
+document.getElementById('toastUndo').onclick = () => {
+  if (!undoBuf) return;
+  state.txns.splice(undoBuf.i, 0, undoBuf.t);
+  state.flash = undoBuf.t.guid; undoBuf = null;
+  persist(); render();
+  document.getElementById('toast').classList.remove('show');
+};
+
+/* ---------- イベント ---------- */
+const app = document.getElementById('app');
+function select(id){
+  state.selected = id; state.editing = null; state.q = '';
+  for (let a = A[A[id].parent]; a; a = A[a.parent]) state.expanded.add(a.guid);
+  app.classList.add('show-main');
+  render({scrollBottom: true});
+}
+
+document.getElementById('tree').addEventListener('click', e => {
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) { const id = tg.dataset.toggle; state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); renderSidebar(balances()); return; }
+  const row = e.target.closest('[data-id]');
+  if (row) select(row.dataset.id);
+});
+document.getElementById('treeQ').addEventListener('input', e => { state.treeQ = e.target.value; renderSidebar(balances()); });
+document.getElementById('toggleAll').onclick = () => {
+  const parents = ACCOUNTS.filter(a => CHILDREN[a.guid]).map(a => a.guid);
+  const allOpen = parents.every(p => state.expanded.has(p));
+  state.expanded = new Set(allOpen ? [] : parents);
+  renderSidebar(balances());
+};
+
+const main = document.getElementById('main');
+main.addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('[data-back]')) { app.classList.remove('show-main'); return; }
+  const go = t.closest('[data-go]'); if (go) return select(go.dataset.go);
+  const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; render({scrollBottom:true}); return; }
+  if (t.closest('[data-new]') || t.closest('[data-open-composer]')) {
+    state.composerOpen = true;
+    const c = document.querySelector('form.composer'); c?.classList.add('open');
+    c?.querySelector('[name=desc]')?.focus(); return;
+  }
+  if (t.closest('[data-cancel]')) { state.editing = null; render(); return; }
+  const d = t.closest('[data-del]'); if (d) return del(d.dataset.del);
+  const row = t.closest('[data-edit]');
+  if (row) { state.editing = row.dataset.edit; render(); document.querySelector('form.edit [name=desc]')?.focus(); }
+});
+main.addEventListener('keydown', e => {
+  const row = e.target.closest('[data-edit]');
+  if (row && e.key === 'Enter') { row.click(); return; }
+  if (e.key === 'Escape') {
+    const f = e.target.closest('form');
+    if (f?.dataset.form === 'edit') { state.editing = null; render(); }
+    else if (f) { f.reset(); updatePreview(f); }
+  }
+});
+main.addEventListener('submit', e => { e.preventDefault(); save(e.target); });
+main.addEventListener('reset', e => setTimeout(() => { e.target.elements.date.value = state.lastDate; updatePreview(e.target); e.target.querySelector('[data-msg]').textContent=''; }));
+main.addEventListener('input', e => {
+  if (e.target.id === 'regQ') {
+    state.q = e.target.value; const pos = e.target.selectionStart;
+    render(); const q = document.getElementById('regQ'); q.focus(); q.setSelectionRange(pos,pos);
+    return;
+  }
+  const f = e.target.closest('form'); if (!f) return;
+  // 入金と出金は排他：片方を入れたらもう片方を消す
+  if (e.target.name === 'l' && e.target.value) f.elements.r.value = '';
+  if (e.target.name === 'r' && e.target.value) f.elements.l.value = '';
+  updatePreview(f);
+});
+main.addEventListener('change', e => { if (e.target.name === 'desc') quickfill(e.target.closest('form')); });
+main.addEventListener('focusout', e => {
+  if ((e.target.name === 'l' || e.target.name === 'r') && e.target.value) {
+    const v = parseAmt(e.target.value); if (!isNaN(v)) e.target.value = v ? v.toLocaleString('ja-JP') : '';
+  }
+});
+
+if (!matchMedia('(max-width: 820px)').matches) app.classList.add('show-main');
+render({scrollBottom: true});
+</script>
+</body>
+</html>

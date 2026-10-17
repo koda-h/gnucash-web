@@ -1,0 +1,1081 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>GnuCash Web</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --surface-2:#f2f4f7; --hover:#f7f8fa;
+  --border:#e4e7ec; --border-strong:#d0d5dd;
+  --text:#101828; --muted:#667085; --faint:#98a2b3;
+  --accent:#3559e0; --accent-soft:#eef2ff; --accent-text:#2f4cc2;
+  --pos:#067647; --neg:#c4320a; --pos-soft:#ecfdf3; --neg-soft:#fef3f2;
+  --flash:#fff7d6;
+  --shadow:0 1px 2px rgba(16,24,40,.05);
+  --shadow-lg:0 8px 24px rgba(16,24,40,.10),0 2px 6px rgba(16,24,40,.06);
+  --radius:12px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f1115; --surface:#171a21; --surface-2:#1e222b; --hover:#1c2029;
+    --border:#272c36; --border-strong:#353b47;
+    --text:#e7e9ee; --muted:#9aa3b2; --faint:#6b7383;
+    --accent:#7c98ff; --accent-soft:#1e2540; --accent-text:#a9bbff;
+    --pos:#4ade80; --neg:#ff8a73; --pos-soft:#12261b; --neg-soft:#2c1714;
+    --flash:#3a3313;
+    --shadow:0 1px 2px rgba(0,0,0,.3);
+    --shadow-lg:0 8px 24px rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f1115; --surface:#171a21; --surface-2:#1e222b; --hover:#1c2029;
+  --border:#272c36; --border-strong:#353b47;
+  --text:#e7e9ee; --muted:#9aa3b2; --faint:#6b7383;
+  --accent:#7c98ff; --accent-soft:#1e2540; --accent-text:#a9bbff;
+  --pos:#4ade80; --neg:#ff8a73; --pos-soft:#12261b; --neg-soft:#2c1714;
+  --flash:#3a3313;
+  --shadow:0 1px 2px rgba(0,0,0,.3);
+  --shadow-lg:0 8px 24px rgba(0,0,0,.45);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font:14px/1.5 Inter,"Noto Sans JP",system-ui,-apple-system,"Hiragino Sans",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+button,input{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh}
+
+/* ---------- Sidebar ---------- */
+.sidebar{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;align-items:center;gap:10px;padding:18px 20px 14px}
+.logo{width:28px;height:28px;border-radius:8px;background:var(--accent);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+.brand-name{font-weight:600;font-size:15px}
+.brand-sub{color:var(--muted);font-size:12px}
+.networth{margin:0 16px 12px;padding:14px 16px;border-radius:var(--radius);background:var(--surface-2)}
+.networth .lbl{font-size:12px;color:var(--muted)}
+.networth .val{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.networth .sub{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px}
+.tree-tools{display:flex;gap:8px;padding:0 16px 10px}
+.search{flex:1;position:relative}
+.search input{width:100%;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:0 10px 0 32px;outline:none}
+.search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.search svg{position:absolute;left:10px;top:9px;color:var(--faint)}
+.icon-btn{height:34px;min-width:34px;border:1px solid var(--border);background:var(--surface);border-radius:8px;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:0 8px}
+.icon-btn:hover{background:var(--hover);color:var(--text)}
+.tree{flex:1;overflow:auto;padding:4px 8px 24px}
+.group-h{display:flex;justify-content:space-between;align-items:baseline;padding:14px 12px 6px;font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--muted)}
+.group-h .num{font-size:12px;letter-spacing:0;font-weight:500}
+.trow{display:flex;align-items:center;gap:6px;height:34px;padding:0 10px 0 calc(6px + var(--d) * 16px);border-radius:8px;cursor:pointer;user-select:none}
+.trow:hover{background:var(--hover)}
+.trow.sel{background:var(--accent-soft);color:var(--accent-text)}
+.trow.sel .tbal{color:var(--accent-text)}
+.chev{width:20px;height:20px;border:0;background:none;padding:0;cursor:pointer;color:var(--faint);display:grid;place-items:center;border-radius:4px;flex:none}
+.chev:hover{color:var(--text);background:var(--surface-2)}
+.chev svg{transition:transform .15s}
+.chev.open svg{transform:rotate(90deg)}
+.chev-sp{width:20px;flex:none}
+.tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow.ph .tname{font-weight:500}
+.tbal{color:var(--muted);font-size:13px}
+.tbal.neg{color:var(--neg)}
+mark{background:var(--flash);color:inherit;border-radius:2px}
+
+/* ---------- Main ---------- */
+.main{min-width:0;display:flex;flex-direction:column;min-height:0}
+.header{padding:22px 32px 18px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.back{display:none;border:0;background:none;color:var(--accent);padding:0;margin-bottom:8px;cursor:pointer;font-weight:500}
+.crumbs{color:var(--muted);font-size:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.crumbs button{border:0;background:none;padding:0;color:inherit;cursor:pointer}
+.crumbs button:hover{color:var(--accent)}
+.title{font-size:24px;font-weight:600;letter-spacing:-.01em;margin:2px 0 0;display:flex;align-items:center;gap:10px}
+.badge{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);border:1px solid var(--border)}
+.desc{color:var(--muted);font-size:13px;margin-top:2px}
+.stats{display:flex;gap:28px}
+.stat .lbl{font-size:12px;color:var(--muted)}
+.stat .val{font-size:15px;font-weight:500}
+.stat.big .val{font-size:26px;font-weight:600;letter-spacing:-.01em}
+.toolbar{display:flex;gap:12px;align-items:center;padding:0 32px 14px;flex-wrap:wrap}
+.chips{display:flex;background:var(--surface-2);border-radius:9px;padding:3px}
+.chip{border:0;background:none;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--muted);font-size:13px}
+.chip.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-weight:500}
+.toolbar .search{max-width:280px}
+.spacer{flex:1}
+.btn{height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface);padding:0 14px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.ghost:hover{color:var(--text);background:var(--surface-2)}
+.btn.danger{border-color:transparent;background:none;color:var(--neg)}
+.btn.danger:hover{background:var(--neg-soft)}
+
+.card{margin:0 32px 24px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;flex:1;overflow:hidden}
+.cols{display:grid;grid-template-columns:118px minmax(160px,1.5fr) minmax(150px,1fr) 118px 118px 132px;gap:0 14px;align-items:center;padding:0 20px}
+.reg-head{height:40px;font-size:12px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border);background:var(--surface)}
+.r{text-align:right}
+.scroll{overflow:auto;flex:1;min-height:0}
+.month{position:sticky;top:0;z-index:1;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--muted);padding:6px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.month .num{font-weight:500}
+.row{min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
+.row:hover{background:var(--hover)}
+.row.flash{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:var(--flash)}to{background:transparent}}
+.c-date{color:var(--muted)}
+.c-date .wd{font-size:11px;margin-left:4px;color:var(--faint)}
+.c-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.c-desc .ph{color:var(--faint)}
+.c-acct{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;padding:2px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted);vertical-align:middle}
+.c-in.gain{color:var(--pos)}
+.c-bal{font-weight:500}
+.c-bal.neg{color:var(--neg)}
+.empty{padding:56px 20px;text-align:center;color:var(--muted)}
+
+/* edit / composer */
+.edit{background:var(--accent-soft);border-bottom:1px solid var(--border);padding-top:10px;padding-bottom:10px;cursor:default}
+.composer{border-top:1px solid var(--border-strong);background:var(--surface);padding-top:12px;padding-bottom:12px}
+.composer-title{grid-column:1/-1;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.f{width:100%;height:34px;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface);padding:0 9px;outline:none;min-width:0}
+.f:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.f.r{text-align:right}
+.f.err{border-color:var(--neg);box-shadow:0 0 0 3px var(--neg-soft)}
+.f:disabled{background:var(--surface-2);color:var(--muted)}
+.bal-preview{text-align:right;color:var(--muted)}
+.bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-top:10px}
+.hint{font-size:12px;color:var(--faint)}
+.msg{font-size:12px;color:var(--neg)}
+kbd{font:11px Inter,sans-serif;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--surface)}
+
+/* overview (placeholder accounts) */
+.overview{padding:0 32px 32px;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;overflow:auto}
+.ocard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;cursor:pointer;text-align:left;box-shadow:var(--shadow)}
+.ocard:hover{border-color:var(--accent)}
+.ocard .n{font-weight:500}
+.ocard .s{font-size:12px;color:var(--muted)}
+.ocard .v{font-size:18px;font-weight:600;margin-top:8px}
+
+/* 登録簿の幅が狭いときは 2 段表示（コンテナクエリ） */
+.card{container-type:inline-size;container-name:reg}
+@container reg (max-width: 760px){
+  .reg-head{display:none}
+  .cols{grid-template-columns:62px minmax(0,1fr) auto;gap:2px 10px;padding:0 16px}
+  .row{padding-top:8px;padding-bottom:8px}
+  .row .c-date{grid-area:1/1/3/2;align-self:start;font-size:13px;line-height:1.3}
+  .row .c-date .wd{display:block;margin:0}
+  .row .c-desc{grid-area:1/2/2/3}
+  .row .c-acct{grid-area:2/2/3/3}
+  .row .c-in,.row .c-out{grid-area:1/3/2/4}
+  .row .c-in:empty,.row .c-out:empty{display:none}
+  .row .inc::before{content:"+"}
+  .row .dec::before{content:"−"}
+  .row .c-bal{grid-area:2/3/3/4;font-size:12px;color:var(--muted);font-weight:400}
+  .row .c-bal.neg{color:var(--neg)}
+  .month{padding:6px 16px}
+  .edit.cols,.composer.cols{grid-template-columns:1fr 1fr;gap:8px}
+  .edit .e-date,.composer .e-date{grid-column:1/-1}
+  .edit .e-desc,.composer .e-desc,.edit .e-acct,.composer .e-acct{grid-column:1/-1}
+  .bal-preview{display:none}
+  .hint{display:none}
+  .sline-head,.s-idx{display:none}
+  .split-view .sline{grid-template-columns:62px minmax(0,1fr) auto;padding-top:4px;padding-bottom:4px}
+  .split-view .sline .s-memo{grid-area:2/2/3/3;font-size:12px}
+  .split-view .sline .c-acct{grid-area:1/2/2/3}
+  .split-view .sline .r:empty{display:none}
+  .split-view .sline .r[data-label]{grid-area:1/3/2/4}
+  .split-view .sline .r[data-label]:not(:empty)::before{content:attr(data-label) " ";font-size:11px;color:var(--muted)}
+  .split-edit .sline{grid-template-columns:1fr 1fr auto;gap:6px}
+  .split-edit .e-sacct{grid-area:1/1/2/3}
+  .split-edit .e-x{grid-area:1/3/2/4}
+  .split-edit .e-smemo{grid-area:2/1/3/4}
+  .split-edit .e-sl{grid-area:3/1/4/2}
+  .split-edit .e-sr{grid-area:3/2/4/4}
+  .split-edit .sline{padding-bottom:8px;border-bottom:1px solid var(--border)}
+  .composer:not(.open) > :not(.composer-title){display:none}
+  .composer:not(.open) .composer-title{margin:0;cursor:pointer;color:var(--accent);font-size:14px}
+  .composer:not(.open){padding-top:14px;padding-bottom:14px}
+}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:#101828;color:#fff;border-radius:10px;padding:10px 12px 10px 16px;display:flex;gap:14px;align-items:center;box-shadow:var(--shadow-lg);transition:.2s;z-index:10;font-size:13px}
+.toast.show{opacity:1;transform:translateX(-50%);pointer-events:auto}
+.toast button{border:0;background:rgba(255,255,255,.12);color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer}
+
+/* ---------- Mobile ---------- */
+@media (max-width: 820px){
+  .app{grid-template-columns:1fr}
+  .main{display:none}
+  .app.show-main .sidebar{display:none}
+  .app.show-main .main{display:flex}
+  .back{display:inline-block}
+  .header{padding:16px 16px 12px}
+  .toolbar{padding:0 16px 12px}
+  .toolbar .search{max-width:none;flex-basis:100%}
+  .card{margin:0 0 0;border-radius:0;border-left:0;border-right:0}
+  .overview{padding:0 16px 24px}
+}
+
+/* 実データ用の追加スタイル */
+.rec{display:inline-block;font-size:10.5px;font-weight:600;line-height:16px;padding:0 5px;border-radius:4px;margin-left:6px;vertical-align:1px;background:var(--pos-soft);color:var(--pos)}
+.rec.c{background:var(--surface-2);color:var(--muted)}
+.tnum{color:var(--faint);font-size:12px;margin-right:6px}
+.more{display:block;width:100%;border:0;border-bottom:1px solid var(--border);background:none;color:var(--accent);padding:10px;cursor:pointer;font-weight:500}
+.more:hover{background:var(--hover)}
+.banner{margin:0 16px 12px;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.6;background:var(--surface-2);color:var(--muted)}
+.banner.warn{background:var(--neg-soft);color:var(--neg)}
+.banner b{color:var(--text)}
+.banner.warn b{color:inherit}
+.readonly-note{border-top:1px solid var(--border);padding:12px 20px;font-size:12px;color:var(--muted);background:var(--surface)}
+.loading{padding:56px 20px;text-align:center;color:var(--muted)}
+.trow.hidden-acct .tname{color:var(--faint)}
+form.busy{opacity:.6;pointer-events:none}
+
+/* 分割取引 */
+.split-toggle{border:0;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12.5px}
+.split-toggle:hover{color:var(--text);background:var(--border)}
+.split-toggle svg{transition:transform .15s;flex:none}
+.split-toggle.open{background:var(--accent-soft);color:var(--accent-text)}
+.split-toggle.open svg{transform:rotate(90deg)}
+.split-view{background:var(--surface-2);border-bottom:1px solid var(--border);padding:4px 0}
+.sline{min-height:32px;font-size:13px}
+.s-memo{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill.self{background:var(--accent-soft);color:var(--accent-text)}
+.split-edit{grid-column:1/-1;margin-top:10px;padding-top:8px;border-top:1px dashed var(--border-strong)}
+.split-edit .cols{padding:0}
+.split-edit .sline{margin-bottom:6px}
+.sline-head{font-size:11px;color:var(--muted);height:22px}
+.s-idx{color:var(--faint);font-size:12px;text-align:right}
+.e-x{height:30px;min-width:30px;justify-self:start}
+.split-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.imb{font-size:12px;font-weight:500}
+.imb.ok{color:var(--pos)}
+.imb.ng{color:var(--neg)}
+.split-ro{grid-column:1/-1;margin-top:10px;border-radius:8px;overflow:hidden}
+.split-ro .split-view{border:0}
+
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">G</div>
+      <div><div class="brand-name">GnuCash Web</div><div class="brand-sub" id="bookName">読み込み中…</div></div>
+    </div>
+    <div class="networth" id="networth"></div>
+    <div id="banner"></div>
+    <div class="tree-tools">
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="treeQ" placeholder="勘定科目を検索" autocomplete="off">
+      </label>
+      <button class="icon-btn" id="toggleAll" title="すべて展開／折りたたみ">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
+      </button>
+    </div>
+    <nav class="tree" id="tree" role="tree"></nav>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+<div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo" hidden>元に戻す</button></div>
+<datalist id="acctList"></datalist>
+<datalist id="acctListAll"></datalist>
+<datalist id="descList"></datalist>
+
+
+<script>
+/* =========================================================
+   GnuCash Web — web/server.py の API から実データを読み書きする
+   split の値は「借方 = 正 / 貸方 = 負」。1取引の合計は必ず 0
+   ========================================================= */
+const TYPES = {
+  ASSET:     {label:'資産',           credit:false, cols:['入金','出金'], group:'asset'},
+  BANK:      {label:'銀行',           credit:false, cols:['入金','出金'], group:'asset'},
+  CASH:      {label:'現金',           credit:false, cols:['入金','出金'], group:'asset'},
+  STOCK:     {label:'株式',           credit:false, cols:['購入','売却'], group:'asset'},
+  MUTUAL:    {label:'投資信託',        credit:false, cols:['購入','売却'], group:'asset'},
+  RECEIVABLE:{label:'売掛金',          credit:false, cols:['請求','入金'], group:'asset'},
+  CURRENCY:  {label:'通貨',           credit:false, cols:['入金','出金'], group:'asset'},
+  CREDIT:    {label:'クレジットカード', credit:true,  cols:['返済','利用'], group:'liab'},
+  LIABILITY: {label:'負債',           credit:true,  cols:['返済','借入'], group:'liab'},
+  PAYABLE:   {label:'買掛金',          credit:true,  cols:['支払','請求'], group:'liab'},
+  INCOME:    {label:'収益',           credit:true,  cols:['取消','収入']},
+  EXPENSE:   {label:'費用',           credit:false, cols:['支出','返金']},
+  EQUITY:    {label:'純資産',          credit:true,  cols:['減少','増加']},
+  TRADING:   {label:'トレーディング',   credit:false, cols:['増加','減少']},
+};
+const T = type => TYPES[type] || {label:type, credit:false, cols:['増加','減少']};
+const SYMBOLS = {JPY:'¥', USD:'$', EUR:'€', GBP:'£', CNY:'元'};
+const PAGE = 300;
+
+const state = {
+  book: null,
+  selected: null,
+  expanded: new Set(),
+  editing: null,
+  period: 'all',
+  q: '',
+  treeQ: '',
+  flash: null,
+  today: '',
+  lastDate: '',
+  composerOpen: false,
+  reg: null,          // {account, rows}
+  openSplits: new Set(), // 分割を展開表示している取引
+  txCache: {},           // 取引 GUID → /api/transactions/{guid} の結果
+  drafts: {},            // 分割入力中の下書き（'new' = 新規、その他は取引 GUID）
+  limit: PAGE,
+};
+let A = {}, CHILDREN = {}, ROOTS = [], TOTAL = {};
+
+/* ---------- API ---------- */
+async function api(method, url, body){
+  const res = await fetch(url, {method, headers: body ? {'Content-Type':'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+async function loadBook(){
+  const b = await api('GET', '/api/book');
+  state.book = b;
+  state.today ||= b.today;
+  state.lastDate ||= b.today;
+  A = {}; CHILDREN = {};
+  for (const a of b.accounts) { A[a.guid] = a; (CHILDREN[a.parent || 'ROOT'] ||= []).push(a.guid); }
+  ROOTS = CHILDREN.ROOT || [];
+  // 子科目の合計は同じ通貨・銘柄のものだけ足す（換算はしない）
+  TOTAL = {};
+  const walk = id => (TOTAL[id] = A[id].balance + (CHILDREN[id] || [])
+    .reduce((x, c) => { const v = walk(c); return A[c].commodity.mnemonic === A[id].commodity.mnemonic ? x + v : x; }, 0));
+  ROOTS.forEach(walk);
+}
+async function loadRegister(id){
+  state.reg = await api('GET', `/api/accounts/${id}/register`);
+}
+const canWrite = () => state.book && !state.book.readOnly && !state.book.writeBlocked;
+
+/* ---------- 科目ヘルパ ---------- */
+const path = id => { const p = []; for (let a = A[id]; a; a = A[a.parent]) p.unshift(a.name); return p; };
+const fullName = id => A[id] ? path(id).join(':') : '（不明な科目）';
+const sign = id => T(A[id].type).credit ? -1 : 1;
+const digitsOf = id => Math.round(Math.log10(A[id]?.commodity.fraction || 1));
+
+/* ---------- 表示ヘルパ ---------- */
+function money(n, id){
+  // id は勘定科目 GUID、または commodity オブジェクト
+  const c = (typeof id === 'object' ? id : A[id]?.commodity) || {mnemonic: state.book?.currency || 'JPY', fraction: 1};
+  const d = Math.round(Math.log10(c.fraction || 1));
+  const v = Math.round(n * (c.fraction || 1)) / (c.fraction || 1);
+  const s = Math.abs(v).toLocaleString('ja-JP', {minimumFractionDigits: d, maximumFractionDigits: d});
+  const sym = SYMBOLS[c.mnemonic];
+  return (v < 0 ? '−' : '') + (sym ? sym + s : `${s} ${c.mnemonic}`);
+}
+const plain = (n, id) => Math.abs(n).toLocaleString('ja-JP', {maximumFractionDigits: digitsOf(id)});
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const WD = ['日','月','火','水','木','金','土'];
+const fmtDate = iso => { const [y,m,d] = iso.split('-'); return `${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span>`; };
+const hl = (text, q) => { if (!q) return esc(text); const i = text.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(text) : esc(text.slice(0,i)) + '<mark>' + esc(text.slice(i, i+q.length)) + '</mark>' + esc(text.slice(i+q.length)); };
+const chevron = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 6 6 6-6 6"/></svg>';
+function parseAmt(s){
+  const v = String(s).replace(/[,，¥\s円]/g, '').replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  if (v === '') return 0;
+  return /^\d+(\.\d+)?$/.test(v) ? +v : NaN;
+}
+function shiftMonth(iso, n){ const [y,m,d] = iso.split('-').map(Number); const dt = new Date(y, m-1+n, d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
+
+/* ---------- サイドバー ---------- */
+function renderSidebar(){
+  const b = state.book;
+  document.getElementById('bookName').textContent = b.file + (b.readOnly ? '（読み取り専用）' : '');
+  // 純資産：最上位の資産・負債科目の合計（帳簿の主通貨のみ）
+  let assets = 0, liab = 0;
+  for (const id of ROOTS) {
+    if (A[id].commodity.mnemonic !== b.currency) continue;
+    const g = T(A[id].type).group;
+    if (g === 'asset') assets += TOTAL[id];
+    if (g === 'liab') liab -= TOTAL[id];
+  }
+  const cur = b.accounts.find(a => a.commodity.mnemonic === b.currency)?.commodity || {mnemonic: b.currency, fraction: 1};
+  document.getElementById('networth').innerHTML = `
+    <div class="lbl">純資産（資産 − 負債）</div>
+    <div class="val num">${money(assets - liab, cur)}</div>
+    <div class="sub num"><span>資産 ${money(assets, cur)}</span><span>負債 ${money(liab, cur)}</span></div>`;
+
+  const lock = b.locked.map(l => `${esc(l.Hostname)}（PID ${l.PID}）`).join(', ');
+  document.getElementById('banner').innerHTML =
+    b.readOnly ? `<div class="banner"><b>読み取り専用</b>で開いています。編集するには <code>--write</code> を付けてサーバを起動してください。</div>`
+    : b.writeBlocked ? `<div class="banner warn"><b>GnuCash デスクトップのロックがあります</b>（${lock}）。デスクトップ版を閉じるか、<code>--force</code> で起動してください。</div>`
+    : '';
+
+  const q = state.treeQ.trim();
+  const ql = q.toLowerCase();
+  const memo = {};
+  const matches = id => memo[id] ??= A[id].name.toLowerCase().includes(ql) || (CHILDREN[id] || []).some(matches);
+  const node = (id, depth) => {
+    if (q && !matches(id)) return '';
+    const a = A[id], kids = CHILDREN[id] || [];
+    const open = q ? true : state.expanded.has(id);
+    const v = TOTAL[id] * sign(id);
+    return `<div role="treeitem" aria-expanded="${kids.length ? open : ''}">
+      <div class="trow ${state.selected===id?'sel':''} ${a.placeholder?'ph':''} ${a.hidden?'hidden-acct':''}" data-id="${id}" style="--d:${depth}" title="${esc(a.description)}">
+        ${kids.length ? `<button class="chev ${open?'open':''}" data-toggle="${id}" aria-label="展開">${chevron}</button>` : '<span class="chev-sp"></span>'}
+        <span class="tname">${hl(a.name, q)}</span>
+        <span class="tbal num ${v<0?'neg':''}">${money(v, id)}</span>
+      </div>
+      ${kids.length && open ? `<div role="group">${kids.map(c => node(c, depth+1)).join('')}</div>` : ''}
+    </div>`;
+  };
+  document.getElementById('tree').innerHTML = ROOTS.map(r => {
+    if (q && !matches(r)) return '';
+    return `<div class="group-h"><span class="trow-h" data-id="${r}" style="cursor:pointer">${esc(A[r].name)}</span><span class="num">${money(TOTAL[r]*sign(r), r)}</span></div>`
+      + (CHILDREN[r] || []).map(c => node(c, 0)).join('');
+  }).join('') || '<div class="empty">該当する勘定科目がありません</div>';
+}
+
+/* ---------- メイン ---------- */
+function renderMain(){
+  const main = document.getElementById('main');
+  const id = state.selected;
+  if (!id) { main.innerHTML = '<div class="loading">左の一覧から勘定科目を選んでください</div>'; return; }
+  const a = A[id];
+  const ids = []; for (let x = A[a.parent]; x; x = A[x.parent]) ids.unshift(x.guid);
+  const v = TOTAL[id] * sign(id);
+  const header = `
+    <div class="header">
+      <div>
+        <button class="back" data-back>‹ 勘定科目一覧</button>
+        <div class="crumbs">${ids.map(p => `<button data-go="${p}">${esc(A[p].name)}</button><span>›</span>`).join('')}</div>
+        <h1 class="title">${esc(a.name)} <span class="badge">${T(a.type).label}${a.placeholder?'・集計用':''}${a.commodity.mnemonic !== state.book.currency ? '・' + esc(a.commodity.mnemonic) : ''}</span></h1>
+        ${a.description ? `<div class="desc">${esc(a.description)}</div>` : ''}
+      </div>
+      <div class="stats" id="stats"></div>
+    </div>`;
+
+  if (a.placeholder && CHILDREN[id]) {
+    main.innerHTML = header + `
+      <div class="toolbar"><span class="hint" style="display:inline">この科目は集計用です。取引は子科目に記録します。</span></div>
+      <div class="overview">${CHILDREN[id].map(c => `
+        <button class="ocard" data-go="${c}">
+          <div class="n">${esc(A[c].name)}</div>
+          <div class="s">${T(A[c].type).label}${CHILDREN[c] ? `・${CHILDREN[c].length} 科目` : ''}</div>
+          <div class="v num ${TOTAL[c]*sign(c)<0?'neg':''}">${money(TOTAL[c]*sign(c), c)}</div>
+        </button>`).join('')}</div>`;
+    document.getElementById('stats').innerHTML = `<div class="stat big"><div class="lbl">合計残高</div><div class="val num">${money(v, id)}</div></div>`;
+    return;
+  }
+
+  if (!state.reg || state.reg.account !== id) {
+    main.innerHTML = header + '<div class="loading">取引を読み込み中…</div>';
+    return;
+  }
+
+  const [colL, colR] = T(a.type).cols;
+  const all = state.reg.rows;
+  const month = state.today.slice(0, 7);
+  const mL = all.filter(r => r.date.startsWith(month) && r.amt > 0).reduce((x, r) => x + r.amt, 0);
+  const mR = all.filter(r => r.date.startsWith(month) && r.amt < 0).reduce((x, r) => x - r.amt, 0);
+
+  const from = {all:'', month: month + '-01', q3: shiftMonth(state.today, -3), year: state.today.slice(0,4) + '-01-01'}[state.period];
+  const q = state.q.trim().toLowerCase();
+  let rows = all.filter(r => (!from || r.date >= from) &&
+    (!q || r.desc.toLowerCase().includes(q) || (r.num || '').toLowerCase().includes(q) || (r.other && fullName(r.other).toLowerCase().includes(q))));
+  const hiddenCount = Math.max(0, rows.length - state.limit);
+  rows = rows.slice(hiddenCount);
+
+  const net = {};
+  for (const r of rows) { const m = r.date.slice(0, 7); net[m] = (net[m] || 0) + r.amt; }
+  let body = hiddenCount ? `<button class="more" data-more>以前の取引を表示（残り ${hiddenCount.toLocaleString()} 件）</button>` : '';
+  let lastM = '';
+  for (const r of rows) {
+    const m = r.date.slice(0, 7);
+    if (m !== lastM) {
+      const n = net[m] * sign(id);
+      body += `<div class="month"><span>${+m.slice(0,4)}年${+m.slice(5)}月</span><span class="num">${n>=0?'+':''}${money(n, id)}</span></div>`;
+      lastM = m;
+    }
+    body += state.editing === r.guid ? editRow(r, colL, colR) : viewRow(r, id);
+  }
+  if (!rows.length) body = `<div class="empty">${all.length ? '条件に一致する取引がありません' : 'まだ取引がありません。'}</div>`;
+
+  main.innerHTML = header + `
+    <div class="toolbar">
+      <div class="chips" role="tablist">
+        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年']].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
+      </div>
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="regQ" placeholder="説明・勘定科目で絞り込み" value="${esc(state.q)}" autocomplete="off">
+      </label>
+      <span class="spacer"></span>
+      ${canWrite() ? `<button class="btn primary" data-new>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>取引を追加</button>` : ''}
+    </div>
+    <div class="card">
+      <div class="cols reg-head"><span>日付</span><span>説明</span><span>勘定科目</span><span class="r">${colL}</span><span class="r">${colR}</span><span class="r">残高</span></div>
+      <div class="scroll" id="scroll" data-account="${id}">${body}</div>
+      ${canWrite() ? composer(colL, colR, all.length ? all[all.length-1].bal : 0)
+        : `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため編集できません' : 'GnuCash デスクトップのロック中のため編集できません'}</div>`}
+    </div>`;
+
+  // 子科目がある場合、登録簿はこの科目自身の取引のみ（GnuCash と同じ）なので残高を分けて表示
+  const own = a.balance * sign(id);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="lbl">今月の${colL}</div><div class="val num">${money(mL, id)}</div></div>
+    <div class="stat"><div class="lbl">今月の${colR}</div><div class="val num">${money(mR, id)}</div></div>
+    ${CHILDREN[id] ? `<div class="stat"><div class="lbl">子科目を含む合計</div><div class="val num ${v<0?'neg':''}">${money(v, id)}</div></div>` : ''}
+    <div class="stat big"><div class="lbl">${CHILDREN[id] ? 'この科目の残高' : '残高'}</div><div class="val num ${own<0?'neg':''}">${money(own, id)}</div></div>`;
+}
+
+function viewRow(r, id){
+  const s = sign(id), bal = r.bal * s;
+  const eff = r.amt * s > 0 ? 'inc' : 'dec';
+  const gain = !T(A[id].type).credit && A[id].type !== 'EXPENSE' && r.amt > 0 ? 'gain' : '';
+  const open = state.openSplits.has(r.guid);
+  const acct = r.multi
+    ? `<button type="button" class="pill split-toggle ${open?'open':''}" data-split-toggle="${r.guid}" aria-expanded="${open}" title="分割を${open?'閉じる':'表示'}">${chevron}分割取引</button>`
+    : r.other ? `<span class="pill" title="${esc(fullName(r.other))}">${esc(path(r.other).slice(-2).join(' › '))}</span>` : '';
+  const rec = r.rec === 'y' ? '<span class="rec" title="照合済">照合</span>' : r.rec === 'c' ? '<span class="rec c" title="確認済">確認</span>' : '';
+  return `<div class="cols row ${state.flash===r.guid?'flash':''}" data-edit="${r.guid}" tabindex="0">
+    <span class="c-date num">${fmtDate(r.date)}</span>
+    <span class="c-desc">${r.num ? `<span class="tnum">#${esc(r.num)}</span>` : ''}${r.desc ? esc(r.desc) : '<span class="ph">（説明なし）</span>'}${rec}</span>
+    <span class="c-acct">${acct}</span>
+    <span class="c-in r num ${r.amt > 0 ? eff : ''} ${gain}">${r.amt > 0 ? money(r.amt, id) : ''}</span>
+    <span class="c-out r num ${r.amt < 0 ? eff : ''}">${r.amt < 0 ? money(-r.amt, id) : ''}</span>
+    <span class="c-bal r num ${bal<0?'neg':''}">${money(bal, id)}</span>
+  </div>${open ? splitView(state.txCache[r.guid]) : ''}`;
+}
+
+/* ---------- 分割取引 ---------- */
+const recBadge = rec => rec === 'y' ? '<span class="rec" title="照合済">照合</span>' : rec === 'c' ? '<span class="rec c" title="確認済">確認</span>' : '';
+
+// 分割の読み取り表示（GnuCash の「分割」表示と同じく、各 split の借方/貸方を左右の列に出す）
+function splitView(tx){
+  if (!tx) return '<div class="split-view"><div class="cols sline"><span></span><span class="s-memo">読み込み中…</span></div></div>';
+  const [colL, colR] = T(A[state.selected].type).cols;
+  return `<div class="split-view">${tx.splits.map(s => `<div class="cols sline">
+    <span></span>
+    <span class="s-memo">${esc(s.memo || s.action)}</span>
+    <span class="c-acct"><span class="pill ${s.account===state.selected?'self':''}" title="${esc(fullName(s.account))}">${esc(path(s.account).slice(-2).join(' › '))}</span></span>
+    <span class="r num" data-label="${colL}">${s.value > 0 ? money(s.value, tx.currency) : ''}</span>
+    <span class="r num" data-label="${colR}">${s.value < 0 ? money(-s.value, tx.currency) : ''}</span>
+    <span class="r">${recBadge(s.rec)}</span>
+  </div>`).join('')}</div>`;
+}
+
+async function ensureTx(guid){
+  return state.txCache[guid] ||= await api('GET', `/api/transactions/${guid}`);
+}
+const blankLine = () => ({guid: null, acct: '', memo: '', l: '', r: ''});
+const lineOf = (acct, memo, value, guid = null) => ({guid, acct: acct ? fullName(acct) : '', memo: memo || '',
+  l: value > 0 ? plain(value, state.selected) : '', r: value < 0 ? plain(value, state.selected) : ''});
+function draftFromTx(tx){
+  return {tx, editable: tx.editable, reason: tx.reason, date: tx.date, desc: tx.desc,
+    lines: [...tx.splits.map(s => lineOf(s.account, s.memo, s.value, s.guid)), blankLine()]};
+}
+
+// 画面の入力値を下書きに書き戻す（行の追加・削除で描き直す前に呼ぶ）
+function syncDraft(form){
+  const d = state.drafts[draftKey(form)]; if (!d) return null;
+  d.date = form.elements.date.value; d.desc = form.elements.desc.value;
+  form.querySelectorAll('.sline[data-line]').forEach(el => {
+    const l = d.lines[+el.dataset.line];
+    el.querySelectorAll('[data-k]').forEach(inp => l[inp.dataset.k] = inp.value);
+  });
+  return d;
+}
+const draftKey = form => form.dataset.form === 'new' ? 'new' : form.dataset.guid;
+
+function splitEditor(d, colL, colR){
+  return `<div class="split-edit">
+    <div class="cols sline-head"><span></span><span>メモ</span><span>勘定科目</span><span class="r">${colL}</span><span class="r">${colR}</span><span></span></div>
+    ${d.lines.map((l, i) => `<div class="cols sline" data-line="${i}">
+      <span class="s-idx">${i + 1}</span>
+      <input class="f e-smemo" data-k="memo" value="${esc(l.memo)}" placeholder="メモ" aria-label="メモ" autocomplete="off">
+      <input class="f e-sacct" data-k="acct" value="${esc(l.acct)}" placeholder="勘定科目" aria-label="勘定科目" list="acctListAll" autocomplete="off">
+      <input class="f r num e-sl" data-k="l" value="${esc(l.l)}" placeholder="${colL}" aria-label="${colL}" inputmode="decimal" autocomplete="off">
+      <input class="f r num e-sr" data-k="r" value="${esc(l.r)}" placeholder="${colR}" aria-label="${colR}" inputmode="decimal" autocomplete="off">
+      <button type="button" class="icon-btn e-x" data-line-del="${i}" title="この行を削除" aria-label="この行を削除">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>`).join('')}
+    <div class="split-foot">
+      <button type="button" class="btn ghost" data-line-add>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>行を追加</button>
+      <span class="spacer"></span>
+      <span class="imb" data-imb></span>
+      <button type="button" class="btn ghost" data-balance hidden>差額を調整</button>
+    </div>
+  </div>`;
+}
+
+// 分割行の合計から、この科目の金額欄・貸借差額・残高プレビューを更新
+function splitTotals(form){
+  const d = syncDraft(form); if (!d) return null;
+  const fr = A[state.selected].commodity.fraction || 1;
+  let total = 0, own = 0;
+  for (const l of d.lines) {
+    const v = Math.round(((parseAmt(l.l) || 0) - (parseAmt(l.r) || 0)) * fr);
+    if (isNaN(v)) continue;
+    total += v;
+    if (resolveAccount(l.acct) === state.selected) own += v;
+  }
+  return {total: total / fr, own: own / fr, d};
+}
+function updateSplitSummary(form){
+  const t = splitTotals(form); if (!t) return;
+  form.elements.l.value = t.own > 0 ? plain(t.own, state.selected) : '';
+  form.elements.r.value = t.own < 0 ? plain(t.own, state.selected) : '';
+  const imb = form.querySelector('[data-imb]');
+  if (imb) {
+    imb.className = 'imb num ' + (t.total === 0 ? 'ok' : 'ng');
+    imb.textContent = t.total === 0 ? '貸借一致' : `貸借差額 ${money(Math.abs(t.total), state.selected)}（${t.total > 0 ? '左' : '右'}の列が多い）`;
+    form.querySelector('[data-balance]').hidden = t.total === 0;
+  }
+  updatePreview(form);
+}
+
+async function startSplit(form){
+  const key = draftKey(form), f = form.elements;
+  if (key === 'new') {
+    const v = (parseAmt(f.l.value) || 0) - (parseAmt(f.r.value) || 0);
+    const other = resolveAccount(f.acct.value);
+    state.drafts.new = {editable: true, date: f.date.value, desc: f.desc.value,
+      lines: [lineOf(state.selected, '', v), {...lineOf(other, '', -v), acct: other ? fullName(other) : f.acct.value}, blankLine()]};
+  } else {
+    let tx;
+    try { tx = await ensureTx(key); } catch (e) { form.querySelector('[data-msg]').textContent = e.message; return; }
+    if (!tx.editable) { form.querySelector('[data-msg]').textContent = tx.reason; return; }
+    state.drafts[key] = {...draftFromTx(tx), date: f.date.value, desc: f.desc.value};
+  }
+  render();
+  focusLine(key, state.drafts[key].lines.length - 1);
+}
+function focusLine(key, i){
+  const form = key === 'new' ? document.querySelector('form.composer') : document.querySelector(`form.edit[data-guid="${key}"]`);
+  form?.querySelector(`.sline[data-line="${i}"] [data-k=acct]`)?.focus();
+}
+function readSplitForm(form, d){
+  form.querySelectorAll('.f').forEach(el => el.classList.remove('err'));
+  const err = (el, m) => { el?.classList.add('err'); el?.focus(); form.querySelector('[data-msg]').textContent = m; return null; };
+  syncDraft(form);
+  if (!d.date) return err(form.elements.date, '日付を入力してください');
+  const fr = A[state.selected].commodity.fraction || 1;
+  const out = []; let total = 0;
+  for (const [i, l] of d.lines.entries()) {
+    const el = form.querySelector(`.sline[data-line="${i}"]`);
+    const q = k => el.querySelector(`[data-k=${k}]`);
+    if (!l.acct.trim() && !l.l && !l.r && !l.memo.trim()) continue;   // 空行は無視
+    const acct = resolveAccount(l.acct);
+    if (!acct) return err(q('acct'), `${i + 1} 行目：勘定科目を一覧から選んでください`);
+    if (A[acct].placeholder) return err(q('acct'), `${i + 1} 行目：集計用の科目には記録できません`);
+    const lv = parseAmt(l.l), rv = parseAmt(l.r);
+    if (isNaN(lv)) return err(q('l'), `${i + 1} 行目：金額は数字で入力してください`);
+    if (isNaN(rv)) return err(q('r'), `${i + 1} 行目：金額は数字で入力してください`);
+    if (lv && rv) return err(q('r'), `${i + 1} 行目：どちらか一方だけ入力してください`);
+    const v = lv - rv;
+    total += Math.round(v * fr);
+    out.push({guid: l.guid || undefined, account: acct, memo: l.memo.trim(), amount: v.toFixed(digitsOf(state.selected))});
+  }
+  if (out.length < 2) return err(null, '分割は 2 行以上入力してください');
+  if (total !== 0) return err(null, `貸借が一致していません（差額 ${money(Math.abs(total / fr), state.selected)}）`);
+  return {date: d.date, desc: d.desc.trim(), splits: out};
+}
+
+function fields(vals, colL, colR, multi){
+  return `
+    <input class="f e-date" type="date" name="date" value="${vals.date}" aria-label="日付" required>
+    <input class="f e-desc" name="desc" value="${esc(vals.desc)}" placeholder="説明" aria-label="説明" list="descList" autocomplete="off">
+    <input class="f e-acct" name="acct" value="${esc(multi ? '-- 分割取引 --' : vals.acct)}" placeholder="勘定科目（例: 費用:食費）" aria-label="勘定科目" list="acctList" autocomplete="off" ${multi?'disabled':''}>
+    <input class="f r num e-l" name="l" value="${vals.l}" placeholder="${colL}" aria-label="${colL}" inputmode="decimal" autocomplete="off" ${multi?'disabled':''}>
+    <input class="f r num e-r" name="r" value="${vals.r}" placeholder="${colR}" aria-label="${colR}" inputmode="decimal" autocomplete="off" ${multi?'disabled':''}>`;
+}
+
+function editRow(r, colL, colR){
+  const id = state.selected;
+  const d = state.drafts[r.guid];
+  const vals = {date: d?.date ?? r.date, desc: d?.desc ?? r.desc, acct: r.other ? fullName(r.other) : '',
+    l: r.amt > 0 ? plain(r.amt, id) : '', r: r.amt < 0 ? plain(r.amt, id) : ''};
+  const body = !d ? '' : d.editable ? splitEditor(d, colL, colR) : `<div class="split-ro">${splitView(d.tx)}</div>`;
+  return `<form class="cols edit" data-form="edit" data-guid="${r.guid}" ${d?.editable ? 'data-split' : ''} autocomplete="off">
+    ${fields(vals, colL, colR, !!d)}
+    <span class="bal-preview num">${money(r.bal * sign(id), id)}</span>
+    ${body}
+    <div class="bar">
+      <button type="button" class="btn danger" data-del="${r.guid}">削除</button>
+      ${d ? '' : '<button type="button" class="btn ghost" data-split-start>分割</button>'}
+      <button type="button" class="btn ghost" data-copy="${r.guid}" title="本日の日付で複製します">コピー</button>
+      <span class="msg" data-msg>${d && !d.editable ? esc(d.reason) + '（日付と説明のみ編集できます）' : ''}</span>
+      <span class="spacer"></span>
+      <span class="hint"><kbd>Enter</kbd> 保存　<kbd>Esc</kbd> キャンセル</span>
+      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="submit" class="btn primary">保存</button>
+    </div>
+  </form>`;
+}
+
+function composer(colL, colR, lastBal){
+  const d = state.drafts.new;
+  return `<form class="cols composer ${state.composerOpen || d ? 'open' : ''}" data-form="new" ${d ? 'data-split' : ''} autocomplete="off">
+    <div class="composer-title" data-open-composer>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>新しい取引
+    </div>
+    ${fields({date: d?.date ?? state.lastDate, desc: d?.desc ?? '', acct:'', l:'', r:''}, colL, colR, !!d)}
+    <span class="bal-preview num" data-preview data-base="${lastBal}">${money(lastBal * sign(state.selected), state.selected)}</span>
+    ${d ? splitEditor(d, colL, colR) : ''}
+    <div class="bar">
+      ${d ? '<button type="button" class="btn ghost" data-split-end>分割をやめる</button>' : '<button type="button" class="btn ghost" data-split-start>分割</button>'}
+      <span class="msg" data-msg></span>
+      <span class="spacer"></span>
+      <span class="hint">説明を入力すると過去の取引から勘定科目と金額を補完します　<kbd>Enter</kbd> 追加</span>
+      <button type="reset" class="btn ghost">クリア</button>
+      <button type="submit" class="btn primary">追加</button>
+    </div>
+  </form>`;
+}
+
+/* ---------- 補完リスト ---------- */
+function renderLists(){
+  document.getElementById('acctList').innerHTML = state.book.accounts
+    .filter(a => !a.placeholder && a.guid !== state.selected)
+    .map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
+  document.getElementById('acctListAll').innerHTML = state.book.accounts
+    .filter(a => !a.placeholder).map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
+  document.getElementById('descList').innerHTML = state.book.descriptions.map(d => `<option value="${esc(d)}">`).join('');
+}
+
+// anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
+function render({scrollBottom = false, anchor = null} = {}){
+  if (!state.book) return;
+  // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
+  const old = document.getElementById('scroll');
+  const keep = old && old.dataset.account === state.selected ? old.scrollTop : null;
+  renderSidebar();
+  renderMain();
+  renderLists();
+  document.querySelectorAll('form[data-split]').forEach(updateSplitSummary);
+  const sc = document.getElementById('scroll');
+  if (!sc) return;
+  if (scrollBottom) {
+    sc.scrollTop = sc.scrollHeight;
+    sc.querySelector('.flash')?.scrollIntoView({block: 'nearest'});   // 未来日付の取引がある場合など
+    return;
+  }
+  if (keep !== null) sc.scrollTop = keep;
+  const target = (anchor && sc.querySelector(`[data-edit="${anchor}"]`)) || sc.querySelector('.flash, form.edit');
+  target?.scrollIntoView({block: 'nearest'});
+  if (anchor) target?.focus({preventScroll: true});
+}
+function cancelEdit(){
+  const guid = state.editing;
+  state.editing = null;
+  delete state.drafts[guid];
+  render({anchor: guid});
+}
+
+/* ---------- 入力の検証と保存 ---------- */
+function resolveAccount(text){
+  const t = text.trim(); if (!t) return null;
+  const exact = state.book.accounts.find(a => fullName(a.guid) === t);
+  if (exact) return exact.guid;
+  const byName = state.book.accounts.filter(a => a.name === t || fullName(a.guid).endsWith(':' + t));
+  return byName.length === 1 ? byName[0].guid : null;
+}
+
+function readForm(form, multi){
+  const g = n => form.elements[n];
+  form.querySelectorAll('.f').forEach(el => el.classList.remove('err'));
+  const err = (el, m) => { el.classList.add('err'); el.focus(); form.querySelector('[data-msg]').textContent = m; return null; };
+  const date = g('date').value;
+  if (!date) return err(g('date'), '日付を入力してください');
+  const desc = g('desc').value.trim();
+  if (multi) return {date, desc};
+  const acct = resolveAccount(g('acct').value);
+  if (!acct) return err(g('acct'), '勘定科目を一覧から選んでください');
+  if (acct === state.selected) return err(g('acct'), '同じ勘定科目は選べません');
+  if (A[acct].placeholder) return err(g('acct'), '集計用の科目には記録できません');
+  const l = parseAmt(g('l').value), r = parseAmt(g('r').value);
+  if (isNaN(l)) return err(g('l'), '金額は数字で入力してください');
+  if (isNaN(r)) return err(g('r'), '金額は数字で入力してください');
+  if (l && r) return err(g('r'), 'どちらか一方だけ入力してください');
+  if (!l && !r) return err(g('l'), '金額を入力してください');
+  return {date, desc, acct, amount: (l - r).toFixed(digitsOf(state.selected))};
+}
+
+async function refresh(opts){
+  const id = state.selected;
+  await Promise.all([loadBook(), id && !A[id]?.placeholder ? loadRegister(id) : null]);
+  render(opts);
+}
+
+async function save(form){
+  const isNew = form.dataset.form === 'new';
+  const guid = form.dataset.guid;
+  const key = draftKey(form), draft = state.drafts[key];
+  let body, d;
+  if (draft?.editable) {
+    d = readSplitForm(form, draft); if (!d) return;
+    body = d;
+  } else {
+    d = readForm(form, !!draft); if (!d) return;   // 編集できない分割取引は日付・説明のみ
+    body = {account: state.selected, date: d.date, desc: d.desc};
+    if (!draft) { body.other = d.acct; body.amount = d.amount; }
+  }
+  form.classList.add('busy');
+  try {
+    const res = isNew ? await api('POST', '/api/transactions', body)
+                      : await api('PUT', `/api/transactions/${guid}`, body);
+    state.flash = res.guid;
+    delete state.drafts[key];
+    state.txCache = {};
+    if (isNew) state.lastDate = d.date; else state.editing = null;
+    await refresh({scrollBottom: isNew});
+    if (isNew) document.querySelector('form.composer [name=desc]')?.focus();
+    setTimeout(() => { state.flash = null; }, 1700);
+  } catch (e) {
+    form.classList.remove('busy');
+    form.querySelector('[data-msg]').textContent = e.message;
+  }
+}
+
+/* 説明を入れたら過去の同じ説明の取引から補完（GnuCash の QuickFill 相当） */
+async function quickfill(form){
+  if (form.dataset.form !== 'new' || state.drafts.new) return;
+  const desc = form.elements.desc.value.trim(); if (!desc) return;
+  const res = await api('GET', `/api/quickfill?account=${state.selected}&desc=${encodeURIComponent(desc)}`).catch(() => ({}));
+  if (!res.other || !A[res.other]) return;
+  if (!form.elements.acct.value) form.elements.acct.value = fullName(res.other);
+  if (!form.elements.l.value && !form.elements.r.value) {
+    if (res.amount > 0) form.elements.l.value = plain(res.amount, state.selected);
+    else form.elements.r.value = plain(res.amount, state.selected);
+  }
+  updatePreview(form);
+}
+function updatePreview(form){
+  const p = form.querySelector('[data-preview]'); if (!p) return;
+  const l = parseAmt(form.elements.l.value) || 0, r = parseAmt(form.elements.r.value) || 0;
+  p.textContent = money((+p.dataset.base + l - r) * sign(state.selected), state.selected);
+}
+
+/* ---------- 削除と元に戻す ---------- */
+let undoFn = null, toastTimer;
+async function del(guid){
+  try {
+    const res = await api('DELETE', `/api/transactions/${guid}`);
+    state.editing = null;
+    delete state.drafts[guid];
+    state.txCache = {};
+    await refresh();
+    toast('取引を削除しました', async () => {
+      const r = await api('POST', '/api/transactions/restore', res.snapshot);
+      state.flash = r.guid;
+    });
+  } catch (e) {
+    const msg = document.querySelector('form.edit [data-msg]');
+    if (msg) msg.textContent = e.message; else toast(e.message);
+  }
+}
+// undo: 「元に戻す」で実行する非同期関数（省略時はボタンを出さない）
+function toast(msg, undo = null){
+  undoFn = undo;
+  document.getElementById('toastMsg').textContent = msg;
+  document.getElementById('toastUndo').hidden = !undo;
+  const el = document.getElementById('toast');
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 5000);
+}
+document.getElementById('toastUndo').onclick = async () => {
+  if (!undoFn) return;
+  const fn = undoFn; undoFn = null;
+  document.getElementById('toast').classList.remove('show');
+  try {
+    await fn();
+    state.txCache = {};
+    await refresh();
+  } catch (e) { toast(e.message); }
+};
+
+/* ---------- コピー ---------- */
+function localToday(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+// 保存済みの内容を本日の日付で複製し、追加したときと同じく一覧の一番下に表示する
+async function copyTx(guid){
+  const form = document.querySelector(`form.edit[data-guid="${guid}"]`);
+  form?.classList.add('busy');
+  try {
+    const res = await api('POST', `/api/transactions/${guid}/copy`, {date: localToday()});
+    state.editing = null;
+    delete state.drafts[guid];
+    state.txCache = {};
+    state.flash = res.guid;
+    await refresh({scrollBottom: true});
+    setTimeout(() => { state.flash = null; }, 1700);
+    toast('取引を本日の日付でコピーしました', () => api('DELETE', `/api/transactions/${res.guid}`));
+  } catch (e) {
+    form?.classList.remove('busy');
+    const msg = form?.querySelector('[data-msg]');
+    if (msg) msg.textContent = e.message; else toast(e.message);
+  }
+}
+
+/* ---------- イベント ---------- */
+const app = document.getElementById('app');
+async function select(id){
+  if (!A[id]) return;
+  state.selected = id; state.editing = null; state.q = ''; state.limit = PAGE;
+  state.drafts = {}; state.openSplits.clear();
+  for (let a = A[A[id].parent]; a; a = A[a.parent]) state.expanded.add(a.guid);
+  app.classList.add('show-main');
+  render();
+  if (!A[id].placeholder || !CHILDREN[id]) {
+    try { await loadRegister(id); } catch (e) { toast(e.message); return; }
+    if (state.selected === id) render({scrollBottom: true});
+  }
+}
+
+document.getElementById('tree').addEventListener('click', e => {
+  const tg = e.target.closest('[data-toggle]');
+  if (tg) { const id = tg.dataset.toggle; state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); renderSidebar(); return; }
+  const row = e.target.closest('[data-id]');
+  if (row) select(row.dataset.id);
+});
+document.getElementById('treeQ').addEventListener('input', e => { state.treeQ = e.target.value; renderSidebar(); });
+document.getElementById('toggleAll').onclick = () => {
+  const parents = state.book.accounts.filter(a => CHILDREN[a.guid]).map(a => a.guid);
+  const allOpen = parents.every(p => state.expanded.has(p));
+  state.expanded = new Set(allOpen ? [] : parents);
+  renderSidebar();
+};
+
+const main = document.getElementById('main');
+main.addEventListener('click', e => {
+  const t = e.target;
+  if (t.closest('[data-back]')) { app.classList.remove('show-main'); return; }
+  const go = t.closest('[data-go]'); if (go) return select(go.dataset.go);
+  const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; state.limit = PAGE; render({scrollBottom: true}); return; }
+  if (t.closest('[data-more]')) {
+    const sc = document.getElementById('scroll'), h = sc.scrollHeight;
+    state.limit += 1000; render(); sc.scrollTop = document.getElementById('scroll').scrollHeight - h; return;
+  }
+  if (t.closest('[data-new]') || t.closest('[data-open-composer]')) {
+    state.composerOpen = true;
+    const c = document.querySelector('form.composer'); c?.classList.add('open');
+    c?.querySelector('[name=desc]')?.focus({preventScroll: true});
+    const sc = document.getElementById('scroll'); if (sc) sc.scrollTop = sc.scrollHeight;
+    return;
+  }
+  if (t.closest('[data-cancel]')) { cancelEdit(); return; }
+  const tg = t.closest('[data-split-toggle]'); if (tg) return toggleSplit(tg.dataset.splitToggle);
+  const form = t.closest('form');
+  if (t.closest('[data-split-start]')) return startSplit(form);
+  if (t.closest('[data-split-end]')) { delete state.drafts.new; render(); document.querySelector('form.composer [name=acct]')?.focus(); return; }
+  if (t.closest('[data-line-add]')) {
+    const d = syncDraft(form); d.lines.push(blankLine()); render(); focusLine(draftKey(form), d.lines.length - 1); return;
+  }
+  const ld = t.closest('[data-line-del]');
+  if (ld) { const d = syncDraft(form); d.lines.splice(+ld.dataset.lineDel, 1); if (!d.lines.length) d.lines.push(blankLine()); render(); return; }
+  if (t.closest('[data-balance]')) {
+    // 貸借差額を空いている行（なければ新しい行）に入れる
+    const {total, d} = splitTotals(form);
+    let i = d.lines.findIndex(l => !l.l && !l.r);
+    if (i < 0) { d.lines.push(blankLine()); i = d.lines.length - 1; }
+    d.lines[i].l = total < 0 ? plain(total, state.selected) : '';
+    d.lines[i].r = total > 0 ? plain(total, state.selected) : '';
+    render();
+    if (!d.lines[i].acct) focusLine(draftKey(form), i);
+    return;
+  }
+  const d = t.closest('[data-del]'); if (d) return del(d.dataset.del);
+  const cp = t.closest('[data-copy]'); if (cp) return copyTx(cp.dataset.copy);
+  const row = t.closest('[data-edit]');
+  if (row) openEdit(row.dataset.edit);
+});
+async function openEdit(guid){
+  if (!canWrite()) return toast(state.book.readOnly ? '読み取り専用モードです（--write で起動すると編集できます）' : 'GnuCash デスクトップのロック中です');
+  const r = state.reg.rows.find(x => x.guid === guid);
+  if (r?.rec === 'y') return toast('照合済みの取引は編集できません');
+  // 分割取引は分割行の編集画面で開く（GnuCash の分割表示と同じ）
+  if (r?.multi) {
+    try { state.drafts[guid] = draftFromTx(await ensureTx(guid)); } catch (e) { return toast(e.message); }
+  }
+  if (state.editing && state.editing !== guid) delete state.drafts[state.editing];
+  state.editing = guid; render();
+  document.querySelector('form.edit [name=desc]')?.focus();
+}
+async function toggleSplit(guid){
+  if (state.openSplits.has(guid)) { state.openSplits.delete(guid); render(); return; }
+  state.openSplits.add(guid); render();
+  try { await ensureTx(guid); } catch (e) { state.openSplits.delete(guid); toast(e.message); }
+  render();
+}
+main.addEventListener('keydown', e => {
+  const row = e.target.closest('[data-edit]');
+  if (row && e.key === 'Enter') { row.click(); return; }
+  if (e.key === 'Escape') {
+    const f = e.target.closest('form');
+    if (f?.dataset.form === 'edit') cancelEdit();
+    else if (f) { f.reset(); }
+  }
+});
+main.addEventListener('submit', e => { e.preventDefault(); save(e.target); });
+main.addEventListener('reset', e => setTimeout(() => {
+  if (state.drafts.new) { delete state.drafts.new; render(); return; }
+  e.target.elements.date.value = state.lastDate; updatePreview(e.target);
+  e.target.querySelectorAll('.f').forEach(el => el.classList.remove('err'));
+  e.target.querySelector('[data-msg]').textContent = '';
+}));
+main.addEventListener('input', e => {
+  if (e.target.id === 'regQ') {
+    state.q = e.target.value; state.limit = PAGE;
+    const pos = e.target.selectionStart;
+    render({scrollBottom: true}); const q = document.getElementById('regQ'); q.focus(); q.setSelectionRange(pos, pos);
+    return;
+  }
+  const f = e.target.closest('form'); if (!f) return;
+  const k = e.target.dataset.k;
+  if (k) {   // 分割行
+    const line = e.target.closest('.sline');
+    if (k === 'l' && e.target.value) line.querySelector('[data-k=r]').value = '';
+    if (k === 'r' && e.target.value) line.querySelector('[data-k=l]').value = '';
+    updateSplitSummary(f);
+    return;
+  }
+  // 左右の金額欄は排他：片方を入れたらもう片方を消す
+  if (e.target.name === 'l' && e.target.value) f.elements.r.value = '';
+  if (e.target.name === 'r' && e.target.value) f.elements.l.value = '';
+  updatePreview(f);
+});
+main.addEventListener('change', e => { if (e.target.name === 'desc') quickfill(e.target.closest('form')); });
+main.addEventListener('focusout', e => {
+  if ((e.target.name === 'l' || e.target.name === 'r' || e.target.dataset.k === 'l' || e.target.dataset.k === 'r') && e.target.value) {
+    const v = parseAmt(e.target.value); if (!isNaN(v)) e.target.value = v ? plain(v, state.selected) : '';
+  }
+});
+
+/* ---------- 起動 ---------- */
+(async () => {
+  try {
+    await loadBook();
+  } catch (e) {
+    document.getElementById('tree').innerHTML = `<div class="empty">読み込みに失敗しました<br>${esc(e.message)}</div>`;
+    return;
+  }
+  // 最初は資産科目のうち取引件数が最も多いものを開く
+  const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
+    .sort((x, y) => y.count - x.count)[0] || state.book.accounts.find(a => !a.placeholder);
+  if (first && !matchMedia('(max-width: 820px)').matches) await select(first.guid);
+  else render();
+})();
+</script>
+</body>
+</html>
