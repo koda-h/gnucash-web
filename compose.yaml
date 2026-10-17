@@ -1,0 +1,19 @@
+services:
+  gnucash-web:
+    build: .
+    image: gnucash-web
+    ports:
+      # 127.0.0.1 のみで公開（同じマシンからだけアクセスできる）
+      - "127.0.0.1:${GNUCASH_WEB_PORT:-8000}:8000"
+    volumes:
+      # GnuCash ファイルの「実体がある」フォルダをマウントする（シンボリックリンクのリンク先はコンテナから見えない）。
+      # SQLite は同じフォルダに一時ファイル（-journal）を作るため、ファイル単体ではなくフォルダごとマウントする
+      - ${GNUCASH_DATA_DIR:-.}:/data
+      - ${GNUCASH_BACKUP_PATH:-./backup}:/backup
+    environment:
+      GNUCASH_FILE: /data/${GNUCASH_FILE_NAME:-gnucash.gnucash}
+      GNUCASH_BACKUP_DIR: /backup
+      GNUCASH_WRITE: ${GNUCASH_WRITE:-0}
+      GNUCASH_FORCE: ${GNUCASH_FORCE:-0}
+      TZ: ${GNUCASH_TZ:-Asia/Tokyo}
+    restart: unless-stopped
