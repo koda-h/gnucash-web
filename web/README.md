@@ -59,13 +59,23 @@ http://127.0.0.1:8000/ を開く。停止は `docker compose down`、ログは `
 | `server.py` | HTTP サーバ + SQLite アクセス（API） |
 | `static/index.html` | 画面（勘定科目ツリー・登録簿・入力フォーム） |
 
+## 画面
+
+| 画面 | 内容 |
+|---|---|
+| 勘定科目の取引一覧 | 左のツリーで科目を選ぶ。その科目から見た入金・出金と残高を表示し、一番下の入力欄から追加する |
+| 最近の取引 | 左メニューの「最近の取引」。入力日時の新しい順に全科目の取引を表示（今日／7日／30日）。一番上の入力欄から「出金元 → 入金先 ＋ 金額」で追加でき、追加後も日付と出金元は残る（連続入力） |
+
+どちらの画面でも、行をクリックすると編集・削除・分割・コピーができる。
+
 ## API
 
 | メソッド | パス | 内容 |
 |---|---|---|
 | GET | `/api/book` | 勘定科目ツリー・各科目の残高・説明文の候補・ロック状態 |
 | GET | `/api/accounts/{guid}/register` | 科目の取引一覧（日付順・累計残高つき） |
-| GET | `/api/quickfill?account=&desc=` | 同じ説明の直近取引から相手科目と金額を返す |
+| GET | `/api/recent?days=7` | 入力日時（`enter_date`）が直近 N 日（今日を含む）の取引を新しい順に返す。各取引の全 split つき |
+| GET | `/api/quickfill?account=&desc=` | 同じ説明の直近取引から相手科目と金額を返す。`account` を省略すると出金元（貸方）・入金先（借方）・金額を返す |
 | GET | `/api/transactions/{guid}` | 取引 1 件の全 split（分割の表示・編集用）。`editable` / `reason` で編集可否を返す |
 | POST | `/api/transactions` | 取引の追加。単純な取引は `{account, other, date, desc, amount}`（amount は account 側の借方 = 正）、分割取引は `{date, desc, splits: [{account, memo, amount}]}` |
 | PUT | `/api/transactions/{guid}` | 取引の更新。`splits` を送ると分割行で置き換え（`guid` のある行は更新、ない行は追加、送らなかった既存行は削除） |

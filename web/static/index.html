@@ -15,7 +15,7 @@
   --text:#101828; --muted:#667085; --faint:#98a2b3;
   --accent:#3559e0; --accent-soft:#eef2ff; --accent-text:#2f4cc2;
   --pos:#067647; --neg:#c4320a; --pos-soft:#ecfdf3; --neg-soft:#fef3f2;
-  --flash:#fff7d6;
+  --flash:#fff7d6; --warn:#b45309;
   --shadow:0 1px 2px rgba(16,24,40,.05);
   --shadow-lg:0 8px 24px rgba(16,24,40,.10),0 2px 6px rgba(16,24,40,.06);
   --radius:12px;
@@ -27,7 +27,7 @@
     --text:#e7e9ee; --muted:#9aa3b2; --faint:#6b7383;
     --accent:#7c98ff; --accent-soft:#1e2540; --accent-text:#a9bbff;
     --pos:#4ade80; --neg:#ff8a73; --pos-soft:#12261b; --neg-soft:#2c1714;
-    --flash:#3a3313;
+    --flash:#3a3313; --warn:#f5b94a;
     --shadow:0 1px 2px rgba(0,0,0,.3);
     --shadow-lg:0 8px 24px rgba(0,0,0,.45);
   }
@@ -38,7 +38,7 @@
   --text:#e7e9ee; --muted:#9aa3b2; --faint:#6b7383;
   --accent:#7c98ff; --accent-soft:#1e2540; --accent-text:#a9bbff;
   --pos:#4ade80; --neg:#ff8a73; --pos-soft:#12261b; --neg-soft:#2c1714;
-  --flash:#3a3313;
+  --flash:#3a3313; --warn:#f5b94a;
   --shadow:0 1px 2px rgba(0,0,0,.3);
   --shadow-lg:0 8px 24px rgba(0,0,0,.45);
 }
@@ -170,6 +170,48 @@ kbd{font:11px Inter,sans-serif;border:1px solid var(--border-strong);border-bott
 .ocard .s{font-size:12px;color:var(--muted)}
 .ocard .v{font-size:18px;font-weight:600;margin-top:8px}
 
+/* 最近の取引 */
+.nav-recent{margin:0 8px 10px;width:calc(100% - 16px);display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:0;border-radius:9px;
+  background:none;cursor:pointer;font-weight:500;text-align:left}
+.nav-recent:hover{background:var(--hover)}
+.nav-recent.on{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
+.nav-recent svg{flex:none}
+.nav-recent .cnt{margin-left:auto;font-size:11px;font-weight:600;background:var(--surface-2);color:var(--muted);border-radius:999px;padding:0 7px;line-height:18px}
+.nav-recent.on .cnt{background:var(--accent);color:#fff}
+.rgrid{display:grid;grid-template-columns:52px 76px minmax(140px,1fr) minmax(240px,1.6fr) 120px;gap:0 14px;align-items:center;padding:0 20px}
+.rhead{height:36px;font-size:12px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border)}
+.rrow{min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
+.rrow:hover{background:var(--hover)}
+.rrow.flash{animation:flash 1.6s ease-out}
+.r-t{color:var(--muted)}
+.r-pd{color:var(--muted);line-height:1.25}
+.r-pd .wd{font-size:11px;color:var(--faint);margin-left:3px}
+.r-pd.past{color:var(--text)}
+.past-tag{display:block;font-size:10px;color:var(--warn);line-height:1.3}
+.r-ds{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r-ds .ph{color:var(--faint)}
+.r-amt{font-weight:500}
+.flow{display:flex;align-items:center;gap:6px;min-width:0}
+.flow .pill{max-width:46%;flex:0 1 auto}
+.flow .arrow{color:var(--faint);flex:none}
+.pill.go{border:0;cursor:pointer;font:inherit;font-size:12.5px}
+.pill.go:hover{color:var(--text);background:var(--border)}
+.badge-new{font-size:10px;font-weight:700;color:var(--surface);background:var(--warn);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:1px}
+.rsplit{background:var(--surface-2);border-bottom:1px solid var(--border);padding:4px 0}
+.rsplit .rgrid{min-height:30px;font-size:13px}
+.rsplit .m{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rsplit .dir{font-size:11px;color:var(--faint);flex:none}
+.rform{padding:14px 20px 12px;border-bottom:1px solid var(--border-strong);background:var(--surface)}
+.rform.redit{background:var(--accent-soft);border-bottom:1px solid var(--border)}
+.rform .composer-title{margin-bottom:8px}
+.pgrid{display:grid;grid-template-columns:140px minmax(130px,1fr) minmax(170px,1.15fr) 32px minmax(170px,1.15fr) 120px;gap:10px;align-items:end}
+.fl{display:flex;flex-direction:column;gap:4px;min-width:0}
+.fl > span{font-size:11px;color:var(--faint)}
+.swap{height:34px;width:32px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+.swap:hover{color:var(--text)}
+.swap:disabled{opacity:.4;cursor:default}
+.keep-note{font-size:10.5px;color:var(--accent-text);background:var(--accent-soft);border-radius:4px;padding:0 5px;margin-left:4px}
+
 /* 登録簿の幅が狭いときは 2 段表示（コンテナクエリ） */
 .card{container-type:inline-size;container-name:reg}
 @container reg (max-width: 760px){
@@ -206,6 +248,25 @@ kbd{font:11px Inter,sans-serif;border:1px solid var(--border-strong);border-bott
   .split-edit .e-sl{grid-area:3/1/4/2}
   .split-edit .e-sr{grid-area:3/2/4/4}
   .split-edit .sline{padding-bottom:8px;border-bottom:1px solid var(--border)}
+  .rhead{display:none}
+  .rgrid{grid-template-columns:44px minmax(0,1fr) auto;gap:2px 10px;padding:8px 16px}
+  .rrow .r-t{grid-area:1/1/2/2;font-size:12px}
+  .rrow .r-pd{grid-area:2/1/3/2;font-size:12px}
+  .rrow .r-pd .wd{display:none}
+  .rrow .r-ds{grid-area:1/2/2/3}
+  .rrow .flow{grid-area:2/2/3/4}
+  .rrow .r-amt{grid-area:1/3/2/4}
+  .rsplit .rgrid > span:nth-child(-n+2){display:none}
+  .rsplit .flow{grid-area:1/2/2/3}
+  .rsplit .m{grid-area:2/2/3/3;font-size:12px}
+  .rsplit .m:empty{display:none}
+  .rsplit .r{grid-area:1/3/2/4}
+  .rsplit .flow .pill{max-width:100%}
+  .rform{padding:12px 16px}
+  .pgrid{grid-template-columns:1fr 32px 1fr;gap:8px}
+  .pgrid .c-date{grid-column:1/2}
+  .pgrid .c-amt{grid-column:2/4;grid-row:1}
+  .pgrid .c-desc{grid-column:1/-1}
   .composer:not(.open) > :not(.composer-title){display:none}
   .composer:not(.open) .composer-title{margin:0;cursor:pointer;color:var(--accent);font-size:14px}
   .composer:not(.open){padding-top:14px;padding-bottom:14px}
@@ -279,6 +340,10 @@ form.busy{opacity:.6;pointer-events:none}
     </div>
     <div class="networth" id="networth"></div>
     <div id="banner"></div>
+    <button type="button" class="nav-recent" id="navRecent">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      最近の取引<span class="cnt num" id="recentCnt"></span>
+    </button>
     <div class="tree-tools">
       <label class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -336,6 +401,12 @@ const state = {
   today: '',
   lastDate: '',
   composerOpen: false,
+  view: 'account',      // 'account' = 勘定科目の取引一覧、'recent' = 最近の取引
+  recent: null,         // /api/recent の結果
+  recentDays: 7,        // 今日 = 1 / 7 / 30
+  recentFrom: '',       // 連続入力のため、追加後も残す出金元
+  rnewVals: null,       // 描き直しで入力途中の内容が消えないよう退避
+  added: new Set(),     // この画面で追加した取引（「追加」の印を付ける）
   reg: null,          // {account, rows}
   openSplits: new Set(), // 分割を展開表示している取引
   txCache: {},           // 取引 GUID → /api/transactions/{guid} の結果
@@ -374,7 +445,12 @@ const canWrite = () => state.book && !state.book.readOnly && !state.book.writeBl
 const path = id => { const p = []; for (let a = A[id]; a; a = A[a.parent]) p.unshift(a.name); return p; };
 const fullName = id => A[id] ? path(id).join(':') : '（不明な科目）';
 const sign = id => T(A[id].type).credit ? -1 : 1;
-const digitsOf = id => Math.round(Math.log10(A[id]?.commodity.fraction || 1));
+const digitsOf = id => Math.round(Math.log10((typeof id === 'object' ? id : A[id]?.commodity)?.fraction || 1));
+// 金額の書式の基準。勘定科目の画面ではその科目、最近の取引では帳簿の主通貨
+const bookCommodity = () => state.book.accounts.find(a => a.commodity.mnemonic === state.book.currency)?.commodity
+  || {mnemonic: state.book.currency, fraction: 1};
+const ctx = () => state.view === 'recent' ? bookCommodity() : state.selected;
+const ctxFraction = () => (state.view === 'recent' ? bookCommodity() : A[state.selected].commodity).fraction || 1;
 
 /* ---------- 表示ヘルパ ---------- */
 function money(n, id){
@@ -397,6 +473,7 @@ function parseAmt(s){
   if (v === '') return 0;
   return /^\d+(\.\d+)?$/.test(v) ? +v : NaN;
 }
+function shiftDay(iso, n){ const [y,m,d] = iso.split('-').map(Number); const dt = new Date(y, m-1, d+n); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
 function shiftMonth(iso, n){ const [y,m,d] = iso.split('-').map(Number); const dt = new Date(y, m-1+n, d); return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; }
 
 /* ---------- サイドバー ---------- */
@@ -423,6 +500,10 @@ function renderSidebar(){
     : b.writeBlocked ? `<div class="banner warn"><b>GnuCash デスクトップのロックがあります</b>（${lock}）。デスクトップ版を閉じるか、<code>--force</code> で起動してください。</div>`
     : '';
 
+  document.getElementById('navRecent').classList.toggle('on', state.view === 'recent');
+  const R = state.recent;
+  document.getElementById('recentCnt').textContent = R ? `${RECENT_PERIODS.find(x => x[0] === R.days)?.[1] ?? R.days + '日'} ${R.rows.length}` : '';
+
   const q = state.treeQ.trim();
   const ql = q.toLowerCase();
   const memo = {};
@@ -433,7 +514,7 @@ function renderSidebar(){
     const open = q ? true : state.expanded.has(id);
     const v = TOTAL[id] * sign(id);
     return `<div role="treeitem" aria-expanded="${kids.length ? open : ''}">
-      <div class="trow ${state.selected===id?'sel':''} ${a.placeholder?'ph':''} ${a.hidden?'hidden-acct':''}" data-id="${id}" style="--d:${depth}" title="${esc(a.description)}">
+      <div class="trow ${state.view==='account' && state.selected===id?'sel':''} ${a.placeholder?'ph':''} ${a.hidden?'hidden-acct':''}" data-id="${id}" style="--d:${depth}" title="${esc(a.description)}">
         ${kids.length ? `<button class="chev ${open?'open':''}" data-toggle="${id}" aria-label="展開">${chevron}</button>` : '<span class="chev-sp"></span>'}
         <span class="tname">${hl(a.name, q)}</span>
         <span class="tbal num ${v<0?'neg':''}">${money(v, id)}</span>
@@ -450,6 +531,7 @@ function renderSidebar(){
 
 /* ---------- メイン ---------- */
 function renderMain(){
+  if (state.view === 'recent') return renderRecent();
   const main = document.getElementById('main');
   const id = state.selected;
   if (!id) { main.innerHTML = '<div class="loading">左の一覧から勘定科目を選んでください</div>'; return; }
@@ -584,7 +666,7 @@ async function ensureTx(guid){
 }
 const blankLine = () => ({guid: null, acct: '', memo: '', l: '', r: ''});
 const lineOf = (acct, memo, value, guid = null) => ({guid, acct: acct ? fullName(acct) : '', memo: memo || '',
-  l: value > 0 ? plain(value, state.selected) : '', r: value < 0 ? plain(value, state.selected) : ''});
+  l: value > 0 ? plain(value, ctx()) : '', r: value < 0 ? plain(value, ctx()) : ''});
 function draftFromTx(tx){
   return {tx, editable: tx.editable, reason: tx.reason, date: tx.date, desc: tx.desc,
     lines: [...tx.splits.map(s => lineOf(s.account, s.memo, s.value, s.guid)), blankLine()]};
@@ -600,7 +682,7 @@ function syncDraft(form){
   });
   return d;
 }
-const draftKey = form => form.dataset.form === 'new' ? 'new' : form.dataset.guid;
+const draftKey = form => ['new', 'rnew'].includes(form.dataset.form) ? form.dataset.form : form.dataset.guid;
 
 function splitEditor(d, colL, colR){
   return `<div class="split-edit">
@@ -627,24 +709,29 @@ function splitEditor(d, colL, colR){
 // 分割行の合計から、この科目の金額欄・貸借差額・残高プレビューを更新
 function splitTotals(form){
   const d = syncDraft(form); if (!d) return null;
-  const fr = A[state.selected].commodity.fraction || 1;
-  let total = 0, own = 0;
+  const fr = ctxFraction();
+  let total = 0, own = 0, debit = 0;
   for (const l of d.lines) {
     const v = Math.round(((parseAmt(l.l) || 0) - (parseAmt(l.r) || 0)) * fr);
     if (isNaN(v)) continue;
     total += v;
-    if (resolveAccount(l.acct) === state.selected) own += v;
+    if (v > 0) debit += v;
+    if (state.view === 'account' && resolveAccount(l.acct) === state.selected) own += v;
   }
-  return {total: total / fr, own: own / fr, d};
+  return {total: total / fr, own: own / fr, debit: debit / fr, d};
 }
 function updateSplitSummary(form){
   const t = splitTotals(form); if (!t) return;
-  form.elements.l.value = t.own > 0 ? plain(t.own, state.selected) : '';
-  form.elements.r.value = t.own < 0 ? plain(t.own, state.selected) : '';
+  if (form.elements.amt) {   // 最近の取引：金額欄には借方の合計を出す
+    form.elements.amt.value = t.debit ? plain(t.debit, ctx()) : '';
+  } else {
+    form.elements.l.value = t.own > 0 ? plain(t.own, state.selected) : '';
+    form.elements.r.value = t.own < 0 ? plain(t.own, state.selected) : '';
+  }
   const imb = form.querySelector('[data-imb]');
   if (imb) {
     imb.className = 'imb num ' + (t.total === 0 ? 'ok' : 'ng');
-    imb.textContent = t.total === 0 ? '貸借一致' : `貸借差額 ${money(Math.abs(t.total), state.selected)}（${t.total > 0 ? '左' : '右'}の列が多い）`;
+    imb.textContent = t.total === 0 ? '貸借一致' : `貸借差額 ${money(Math.abs(t.total), ctx())}（${t.total > 0 ? '左' : '右'}の列が多い）`;
     form.querySelector('[data-balance]').hidden = t.total === 0;
   }
   updatePreview(form);
@@ -652,7 +739,13 @@ function updateSplitSummary(form){
 
 async function startSplit(form){
   const key = draftKey(form), f = form.elements;
-  if (key === 'new') {
+  if (key === 'rnew') {   // 最近の取引：入金先（借方）・出金元（貸方）の 2 行から始める
+    const amt = parseAmt(f.amt.value) || 0;
+    const from = resolveAccount(f.from.value), to = resolveAccount(f.to.value);
+    state.drafts.rnew = {editable: true, date: f.date.value, desc: f.desc.value,
+      lines: [{...lineOf(to, '', amt), acct: to ? fullName(to) : f.to.value},
+              {...lineOf(from, '', -amt), acct: from ? fullName(from) : f.from.value}, blankLine()]};
+  } else if (key === 'new') {
     const v = (parseAmt(f.l.value) || 0) - (parseAmt(f.r.value) || 0);
     const other = resolveAccount(f.acct.value);
     state.drafts.new = {editable: true, date: f.date.value, desc: f.desc.value,
@@ -667,7 +760,7 @@ async function startSplit(form){
   focusLine(key, state.drafts[key].lines.length - 1);
 }
 function focusLine(key, i){
-  const form = key === 'new' ? document.querySelector('form.composer') : document.querySelector(`form.edit[data-guid="${key}"]`);
+  const form = document.querySelector(key === 'new' ? 'form.composer' : key === 'rnew' ? 'form[data-form="rnew"]' : `form[data-guid="${key}"]`);
   form?.querySelector(`.sline[data-line="${i}"] [data-k=acct]`)?.focus();
 }
 function readSplitForm(form, d){
@@ -675,7 +768,7 @@ function readSplitForm(form, d){
   const err = (el, m) => { el?.classList.add('err'); el?.focus(); form.querySelector('[data-msg]').textContent = m; return null; };
   syncDraft(form);
   if (!d.date) return err(form.elements.date, '日付を入力してください');
-  const fr = A[state.selected].commodity.fraction || 1;
+  const fr = ctxFraction();
   const out = []; let total = 0;
   for (const [i, l] of d.lines.entries()) {
     const el = form.querySelector(`.sline[data-line="${i}"]`);
@@ -690,10 +783,10 @@ function readSplitForm(form, d){
     if (lv && rv) return err(q('r'), `${i + 1} 行目：どちらか一方だけ入力してください`);
     const v = lv - rv;
     total += Math.round(v * fr);
-    out.push({guid: l.guid || undefined, account: acct, memo: l.memo.trim(), amount: v.toFixed(digitsOf(state.selected))});
+    out.push({guid: l.guid || undefined, account: acct, memo: l.memo.trim(), amount: v.toFixed(digitsOf(ctx()))});
   }
   if (out.length < 2) return err(null, '分割は 2 行以上入力してください');
-  if (total !== 0) return err(null, `貸借が一致していません（差額 ${money(Math.abs(total / fr), state.selected)}）`);
+  if (total !== 0) return err(null, `貸借が一致していません（差額 ${money(Math.abs(total / fr), ctx())}）`);
   return {date: d.date, desc: d.desc.trim(), splits: out};
 }
 
@@ -752,7 +845,7 @@ function composer(colL, colR, lastBal){
 /* ---------- 補完リスト ---------- */
 function renderLists(){
   document.getElementById('acctList').innerHTML = state.book.accounts
-    .filter(a => !a.placeholder && a.guid !== state.selected)
+    .filter(a => !a.placeholder && (state.view !== 'account' || a.guid !== state.selected))
     .map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
   document.getElementById('acctListAll').innerHTML = state.book.accounts
     .filter(a => !a.placeholder).map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
@@ -764,7 +857,9 @@ function render({scrollBottom = false, anchor = null} = {}){
   if (!state.book) return;
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
-  const keep = old && old.dataset.account === state.selected ? old.scrollTop : null;
+  const viewKey = state.view === 'recent' ? '__recent' : state.selected;
+  const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
+  saveRecentComposer();
   renderSidebar();
   renderMain();
   renderLists();
@@ -772,12 +867,13 @@ function render({scrollBottom = false, anchor = null} = {}){
   const sc = document.getElementById('scroll');
   if (!sc) return;
   if (scrollBottom) {
-    sc.scrollTop = sc.scrollHeight;
+    sc.scrollTop = state.view === 'recent' ? 0 : sc.scrollHeight;   // 最近の取引は新しい順なので先頭
     sc.querySelector('.flash')?.scrollIntoView({block: 'nearest'});   // 未来日付の取引がある場合など
     return;
   }
   if (keep !== null) sc.scrollTop = keep;
-  const target = (anchor && sc.querySelector(`[data-edit="${anchor}"]`)) || sc.querySelector('.flash, form.edit');
+  const target = (anchor && sc.querySelector(`[data-edit="${anchor}"], [data-redit="${anchor}"]`))
+    || sc.querySelector('.flash, form.edit, form.redit');
   target?.scrollIntoView({block: 'nearest'});
   if (anchor) target?.focus({preventScroll: true});
 }
@@ -819,7 +915,8 @@ function readForm(form, multi){
 
 async function refresh(opts){
   const id = state.selected;
-  await Promise.all([loadBook(), id && !A[id]?.placeholder ? loadRegister(id) : null]);
+  await Promise.all([loadBook(), loadRecent().catch(() => {}),
+    state.view === 'account' && id && !A[id]?.placeholder ? loadRegister(id) : null]);
   render(opts);
 }
 
@@ -886,7 +983,7 @@ async function del(guid){
       state.flash = r.guid;
     });
   } catch (e) {
-    const msg = document.querySelector('form.edit [data-msg]');
+    const msg = document.querySelector('form.edit [data-msg], form.redit [data-msg]');
     if (msg) msg.textContent = e.message; else toast(e.message);
   }
 }
@@ -918,7 +1015,7 @@ function localToday(){
 }
 // 保存済みの内容を本日の日付で複製し、追加したときと同じく一覧の一番下に表示する
 async function copyTx(guid){
-  const form = document.querySelector(`form.edit[data-guid="${guid}"]`);
+  const form = document.querySelector(`form[data-guid="${guid}"]`);
   form?.classList.add('busy');
   try {
     const res = await api('POST', `/api/transactions/${guid}/copy`, {date: localToday()});
@@ -926,6 +1023,7 @@ async function copyTx(guid){
     delete state.drafts[guid];
     state.txCache = {};
     state.flash = res.guid;
+    state.added.add(res.guid);
     await refresh({scrollBottom: true});
     setTimeout(() => { state.flash = null; }, 1700);
     toast('取引を本日の日付でコピーしました', () => api('DELETE', `/api/transactions/${res.guid}`));
@@ -936,10 +1034,266 @@ async function copyTx(guid){
   }
 }
 
+/* ---------- 最近の取引 ---------- */
+const RECENT_PERIODS = [[1, '今日'], [7, '7日'], [30, '30日']];
+const RCOLS = ['入金先', '出金元'];   // 分割入力の左（借方）・右（貸方）
+
+async function loadRecent(){
+  const r = await api('GET', `/api/recent?days=${state.recentDays}`);
+  state.recent = r;
+  for (const t of r.rows) state.txCache[t.guid] = t;   // 展開・編集で再取得しないよう、詳細をキャッシュ
+}
+async function openRecent(){
+  state.view = 'recent'; state.editing = null; state.q = '';
+  state.drafts = {}; state.openSplits.clear();
+  app.classList.add('show-main');
+  render();
+  try { await loadRecent(); } catch (e) { toast(e.message); return; }
+  if (state.view === 'recent') render({scrollBottom: true});
+}
+document.getElementById('navRecent').onclick = () => openRecent();
+
+// 出金元（貸方）→ 入金先（借方）。分割取引は片側が 1 科目ならその科目を出す
+function pairOf(tx){
+  const sp = tx.splits;
+  if (sp.length === 2 && sp[0].account !== sp[1].account) {
+    const cr = sp.find(x => x.value < 0) || sp[1], dr = sp.find(x => x !== cr);
+    return {simple: true, from: cr.account, to: dr.account, amount: Math.abs(dr.value), fromGuid: cr.guid, toGuid: dr.guid};
+  }
+  const dr = sp.filter(x => x.value > 0), cr = sp.filter(x => x.value < 0);
+  const one = arr => arr.length && new Set(arr.map(x => x.account)).size === 1 ? arr[0].account : null;
+  return {simple: false, from: one(cr), to: one(dr), amount: dr.reduce((x, y) => x + y.value, 0)};
+}
+const accPill = id => A[id]
+  ? `<button type="button" class="pill go" data-go="${id}" title="${esc(fullName(id))}">${esc(path(id).slice(-2).join(' › '))}</button>`
+  : '<span class="pill">（不明な科目）</span>';
+
+function recentRow(tx){
+  const p = pairOf(tx), open = state.openSplits.has(tx.guid);
+  const toggle = `<button type="button" class="pill split-toggle ${open?'open':''}" data-split-toggle="${tx.guid}" aria-expanded="${open}">${chevron}分割取引</button>`;
+  let flow;
+  if (p.simple) flow = `${accPill(p.from)}<span class="arrow">→</span>${accPill(p.to)}`;
+  else if (!p.from && !p.to) flow = toggle;
+  else flow = `${p.from ? accPill(p.from) : toggle}<span class="arrow">→</span>${p.to ? accPill(p.to) : toggle}${p.from && p.to ? toggle : ''}`;
+  // 取引日が入力日と違う場合は「過去日付」「未来日付」と表示する（日付の付け間違いに気付けるように）
+  const enterDay = (tx.enter || '').slice(0, 10), past = tx.date !== enterDay;
+  const pastLabel = tx.date < enterDay ? '過去日付' : '未来日付';
+  const [y, m, d] = tx.date.split('-');
+  const rec = tx.splits.some(s => s.rec === 'y') ? recBadge('y') : tx.splits.some(s => s.rec === 'c') ? recBadge('c') : '';
+  return `<div class="rgrid rrow ${state.flash===tx.guid?'flash':''}" data-redit="${tx.guid}" tabindex="0">
+    <span class="r-t num">${(tx.enter || '').slice(11, 16)}</span>
+    <span class="r-pd num ${past?'past':''}" ${past ? `title="入力日 ${enterDay}"` : ''}>${past ? `<span class="past-tag">${pastLabel}</span>` : ''}${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span></span>
+    <span class="r-ds">${tx.num ? `<span class="tnum">#${esc(tx.num)}</span>` : ''}${tx.desc ? esc(tx.desc) : '<span class="ph">（説明なし）</span>'}${state.added.has(tx.guid) ? '<span class="badge-new">追加</span>' : ''}${rec}</span>
+    <span class="flow">${flow}</span>
+    <span class="r-amt r num">${money(p.amount, tx.currency)}</span>
+  </div>${open ? recentSplitView(tx) : ''}`;
+}
+function recentSplitView(tx){
+  return `<div class="rsplit">${tx.splits.map(s => `<div class="rgrid">
+    <span></span><span></span>
+    <span class="m">${esc(s.memo || s.action)}</span>
+    <span class="flow"><span class="dir">${s.value > 0 ? '入金先' : s.value < 0 ? '出金元' : ''}</span>${accPill(s.account)}${recBadge(s.rec)}</span>
+    <span class="r num">${money(Math.abs(s.value), tx.currency)}</span>
+  </div>`).join('')}</div>`;
+}
+
+function pairFields(v){
+  const dis = v.multi ? 'disabled' : '';
+  return `
+    <label class="fl c-date"><span>日付</span><input class="f" type="date" name="date" value="${v.date}" required></label>
+    <label class="fl c-desc"><span>説明</span><input class="f" name="desc" value="${esc(v.desc)}" placeholder="説明（過去の取引から補完）" list="descList" autocomplete="off"></label>
+    <label class="fl c-from"><span>出金元${v.keepNote ? '<span class="keep-note">追加後も残る</span>' : ''}</span>
+      <input class="f" name="from" value="${esc(v.from)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 負債:クレジットカード:…'}" list="acctList" autocomplete="off" ${dis}></label>
+    <button type="button" class="swap" data-swap title="出金元と入金先を入れ替え" aria-label="出金元と入金先を入れ替え" ${dis}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg></button>
+    <label class="fl c-to"><span>入金先</span><input class="f" name="to" value="${esc(v.to)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 費用:食費'}" list="acctList" autocomplete="off" ${dis}></label>
+    <label class="fl c-amt"><span>金額</span><input class="f r num" name="amt" value="${esc(v.amt)}" placeholder="0" inputmode="decimal" autocomplete="off" ${dis}></label>`;
+}
+function recentComposer(){
+  const d = state.drafts.rnew, v = state.rnewVals || {};
+  return `<form class="rform" data-form="rnew" data-mode="recent" ${d ? 'data-split' : ''} autocomplete="off">
+    <div class="composer-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>新しい取引</div>
+    <div class="pgrid">${pairFields({date: d?.date ?? v.date ?? state.lastDate, desc: d?.desc ?? v.desc ?? '',
+      from: v.from ?? state.recentFrom, to: v.to ?? '', amt: v.amt ?? '', multi: !!d, keepNote: !d})}</div>
+    ${d ? splitEditor(d, ...RCOLS) : ''}
+    <div class="bar">
+      ${d ? '<button type="button" class="btn ghost" data-split-end>分割をやめる</button>' : '<button type="button" class="btn ghost" data-split-start>分割</button>'}
+      <span class="msg" data-msg></span>
+      <span class="spacer"></span>
+      <span class="hint">説明を入力すると出金元・入金先・金額を補完　<kbd>Enter</kbd> 追加</span>
+      <button type="reset" class="btn ghost">クリア</button>
+      <button type="submit" class="btn primary">追加</button>
+    </div>
+  </form>`;
+}
+// 描き直しの前に、新規入力欄の入力途中の内容を退避する
+function saveRecentComposer(){
+  const f = document.querySelector('form[data-form="rnew"]');
+  if (!f || f.hasAttribute('data-split')) return;
+  const e = f.elements;
+  state.rnewVals = {date: e.date.value, desc: e.desc.value, from: e.from.value, to: e.to.value, amt: e.amt.value};
+}
+function recentEditRow(tx){
+  const d = state.drafts[tx.guid], p = pairOf(tx);
+  const v = {date: d?.date ?? tx.date, desc: d?.desc ?? tx.desc, multi: !!d,
+    from: p.simple ? fullName(p.from) : '', to: p.simple ? fullName(p.to) : '', amt: p.simple ? plain(p.amount, ctx()) : ''};
+  const body = !d ? '' : d.editable ? splitEditor(d, ...RCOLS) : `<div class="split-ro">${recentSplitView(d.tx)}</div>`;
+  return `<form class="rform redit" data-form="redit" data-mode="recent" data-guid="${tx.guid}" ${d?.editable ? 'data-split' : ''} autocomplete="off">
+    <div class="pgrid">${pairFields(v)}</div>
+    ${body}
+    <div class="bar">
+      <button type="button" class="btn danger" data-del="${tx.guid}">削除</button>
+      ${d ? '' : '<button type="button" class="btn ghost" data-split-start>分割</button>'}
+      <button type="button" class="btn ghost" data-copy="${tx.guid}" title="本日の日付で複製します">コピー</button>
+      <span class="msg" data-msg>${d && !d.editable ? esc(d.reason) + '（日付と説明のみ編集できます）' : ''}</span>
+      <span class="spacer"></span>
+      <span class="hint"><kbd>Enter</kbd> 保存　<kbd>Esc</kbd> キャンセル</span>
+      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="submit" class="btn primary">保存</button>
+    </div>
+  </form>`;
+}
+
+function renderRecent(){
+  const main = document.getElementById('main');
+  const R = state.recent, days = state.recentDays;
+  const label = days === 1 ? '今日' : `過去 ${days} 日間`;
+  const header = `
+    <div class="header"><div>
+      <button class="back" data-back>‹ 勘定科目一覧</button>
+      <h1 class="title">最近の取引</h1>
+      <div class="desc">入力日時の新しい順・${label}に登録した ${R && R.days === days ? R.rows.length.toLocaleString() + ' 件' : '…'}</div>
+    </div></div>
+    <div class="toolbar">
+      <div class="chips" role="tablist">${RECENT_PERIODS.map(([n, l]) => `<button class="chip ${days===n?'on':''}" data-rdays="${n}">${l}</button>`).join('')}</div>
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="regQ" placeholder="説明・勘定科目で絞り込み" value="${esc(state.q)}" autocomplete="off">
+        <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </label>
+    </div>`;
+  if (!R || R.days !== days) { main.innerHTML = header + '<div class="loading">読み込み中…</div>'; return; }
+
+  const q = state.q.trim().toLowerCase();
+  const rows = R.rows.filter(tx => !q || tx.desc.toLowerCase().includes(q)
+    || tx.splits.some(s => fullName(s.account).toLowerCase().includes(q) || s.memo.toLowerCase().includes(q)));
+  const today = localToday(), yesterday = shiftDay(today, -1);
+  const counts = {};
+  for (const tx of rows) { const k = (tx.enter || '').slice(0, 10); counts[k] = (counts[k] || 0) + 1; }
+  let body = '', last = null;
+  for (const tx of rows) {
+    const k = (tx.enter || '').slice(0, 10);
+    if (k !== last) {
+      const [y, m, d] = k.split('-');
+      const md = `${+m}/${+d}（${WD[new Date(+y, m-1, +d).getDay()]}）`;
+      body += `<div class="month"><span>${k === today ? '今日　' : k === yesterday ? '昨日　' : ''}${md}</span><span class="num">${counts[k]} 件</span></div>`;
+      last = k;
+    }
+    body += state.editing === tx.guid ? recentEditRow(tx) : recentRow(tx);
+  }
+  if (!rows.length) body = `<div class="empty">${R.rows.length ? '条件に一致する取引がありません' : `${label}に登録した取引はありません`}</div>`;
+
+  main.innerHTML = header + `
+    <div class="card">
+      ${canWrite() ? recentComposer()
+        : `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため追加・編集できません' : 'GnuCash デスクトップのロック中のため追加・編集できません'}</div>`}
+      <div class="rgrid rhead"><span>入力</span><span>取引日</span><span>説明</span><span>出金元 → 入金先</span><span class="r">金額</span></div>
+      <div class="scroll" id="scroll" data-account="__recent">${body}</div>
+    </div>`;
+}
+
+async function openRecentEdit(guid){
+  if (!canWrite()) return toast(state.book.readOnly ? '読み取り専用モードです（--write で起動すると編集できます）' : 'GnuCash デスクトップのロック中です');
+  let tx;
+  try { tx = await ensureTx(guid); } catch (e) { return toast(e.message); }
+  if (tx.splits.some(s => s.rec === 'y')) return toast('照合済みの取引は編集できません');
+  if (state.editing && state.editing !== guid) delete state.drafts[state.editing];
+  if (!pairOf(tx).simple) state.drafts[guid] = draftFromTx(tx);   // 分割取引は分割行の編集で開く
+  state.editing = guid; render();
+  document.querySelector('form.redit [name=desc]')?.focus();
+}
+
+function readPairForm(form){
+  const g = n => form.elements[n];
+  form.querySelectorAll('.f').forEach(el => el.classList.remove('err'));
+  const err = (el, m) => { el.classList.add('err'); el.focus(); form.querySelector('[data-msg]').textContent = m; return null; };
+  const date = g('date').value;
+  if (!date) return err(g('date'), '日付を入力してください');
+  const from = resolveAccount(g('from').value);
+  if (!from) return err(g('from'), '出金元を一覧から選んでください');
+  if (A[from].placeholder) return err(g('from'), '集計用の科目には記録できません');
+  const to = resolveAccount(g('to').value);
+  if (!to) return err(g('to'), '入金先を一覧から選んでください');
+  if (A[to].placeholder) return err(g('to'), '集計用の科目には記録できません');
+  if (from === to) return err(g('to'), '出金元と入金先が同じです');
+  const amt = parseAmt(g('amt').value);
+  if (isNaN(amt)) return err(g('amt'), '金額は数字で入力してください');
+  if (!amt) return err(g('amt'), '金額を入力してください');
+  return {date, desc: g('desc').value.trim(), from, to, amount: amt.toFixed(digitsOf(ctx()))};
+}
+
+async function saveRecent(form){
+  const isNew = form.dataset.form === 'rnew';
+  const guid = form.dataset.guid, key = draftKey(form), draft = state.drafts[key];
+  let body, d;
+  if (draft?.editable) {
+    d = readSplitForm(form, draft); if (!d) return;
+    body = d;
+  } else if (draft) {   // 編集できない分割取引は日付・説明のみ
+    const date = form.elements.date.value;
+    if (!date) return;
+    d = {date}; body = {date, desc: form.elements.desc.value.trim()};
+  } else {
+    d = readPairForm(form); if (!d) return;
+    // 既存の split の GUID とメモを引き継いで、入金先（借方）・出金元（貸方）の 2 行で保存する
+    const tx = isNew ? null : state.txCache[guid], p = tx ? pairOf(tx) : {};
+    const memo = g => tx?.splits.find(s => s.guid === g)?.memo || '';
+    body = {date: d.date, desc: d.desc, splits: [
+      {guid: p.toGuid, account: d.to, memo: memo(p.toGuid), amount: d.amount},
+      {guid: p.fromGuid, account: d.from, memo: memo(p.fromGuid), amount: '-' + d.amount}]};
+  }
+  form.classList.add('busy');
+  try {
+    const res = isNew ? await api('POST', '/api/transactions', body) : await api('PUT', `/api/transactions/${guid}`, body);
+    state.flash = res.guid;
+    delete state.drafts[key];
+    state.txCache = {};
+    if (isNew) {
+      // 連続入力：日付と出金元を残し、説明・入金先・金額を空にする
+      state.added.add(res.guid);
+      state.lastDate = d.date;
+      if (!draft) {
+        state.recentFrom = fullName(d.from);
+        const e = form.elements;
+        e.desc.value = e.to.value = e.amt.value = ''; e.from.value = state.recentFrom;
+      }
+      state.rnewVals = null;
+    } else state.editing = null;
+    await refresh({scrollBottom: isNew});
+    if (isNew) document.querySelector('form[data-form="rnew"] [name=desc]')?.focus();
+    setTimeout(() => { state.flash = null; }, 1700);
+  } catch (e) {
+    form.classList.remove('busy');
+    form.querySelector('[data-msg]').textContent = e.message;
+  }
+}
+
+// 説明から、過去の同じ説明の取引の出金元・入金先・金額を補完（空欄のみ）
+async function quickfillPair(form){
+  if (state.drafts.rnew) return;
+  const desc = form.elements.desc.value.trim(); if (!desc) return;
+  const res = await api('GET', `/api/quickfill?desc=${encodeURIComponent(desc)}`).catch(() => ({}));
+  const e = form.elements;
+  if (res.from && A[res.from] && !e.from.value) e.from.value = fullName(res.from);
+  if (res.to && A[res.to] && !e.to.value) e.to.value = fullName(res.to);
+  if (res.amount && !e.amt.value) e.amt.value = plain(res.amount, ctx());
+}
+
 /* ---------- イベント ---------- */
 const app = document.getElementById('app');
 async function select(id){
   if (!A[id]) return;
+  state.view = 'account';
   state.selected = id; state.editing = null; state.q = ''; state.limit = PAGE;
   state.drafts = {}; state.openSplits.clear();
   for (let a = A[A[id].parent]; a; a = A[a.parent]) state.expanded.add(a.guid);
@@ -1003,7 +1357,17 @@ main.addEventListener('click', e => {
   const tg = t.closest('[data-split-toggle]'); if (tg) return toggleSplit(tg.dataset.splitToggle);
   const form = t.closest('form');
   if (t.closest('[data-split-start]')) return startSplit(form);
-  if (t.closest('[data-split-end]')) { delete state.drafts.new; render(); document.querySelector('form.composer [name=acct]')?.focus(); return; }
+  if (t.closest('[data-split-end]')) {
+    const key = draftKey(form);
+    delete state.drafts[key]; render();
+    document.querySelector(key === 'rnew' ? 'form[data-form="rnew"] [name=to]' : 'form.composer [name=acct]')?.focus();
+    return;
+  }
+  if (t.closest('[data-swap]')) {
+    const f = form.elements; [f.from.value, f.to.value] = [f.to.value, f.from.value]; return;
+  }
+  const rp = t.closest('[data-rdays]');
+  if (rp) { state.recentDays = +rp.dataset.rdays; openRecent(); return; }
   if (t.closest('[data-line-add]')) {
     const d = syncDraft(form); d.lines.push(blankLine()); render(); focusLine(draftKey(form), d.lines.length - 1); return;
   }
@@ -1014,8 +1378,8 @@ main.addEventListener('click', e => {
     const {total, d} = splitTotals(form);
     let i = d.lines.findIndex(l => !l.l && !l.r);
     if (i < 0) { d.lines.push(blankLine()); i = d.lines.length - 1; }
-    d.lines[i].l = total < 0 ? plain(total, state.selected) : '';
-    d.lines[i].r = total > 0 ? plain(total, state.selected) : '';
+    d.lines[i].l = total < 0 ? plain(total, ctx()) : '';
+    d.lines[i].r = total > 0 ? plain(total, ctx()) : '';
     render();
     if (!d.lines[i].acct) focusLine(draftKey(form), i);
     return;
@@ -1024,6 +1388,8 @@ main.addEventListener('click', e => {
   const cp = t.closest('[data-copy]'); if (cp) return copyTx(cp.dataset.copy);
   const row = t.closest('[data-edit]');
   if (row) openEdit(row.dataset.edit);
+  const rrow = t.closest('[data-redit]');
+  if (rrow) openRecentEdit(rrow.dataset.redit);
 });
 async function openEdit(guid){
   if (!canWrite()) return toast(state.book.readOnly ? '読み取り専用モードです（--write で起動すると編集できます）' : 'GnuCash デスクトップのロック中です');
@@ -1044,16 +1410,22 @@ async function toggleSplit(guid){
   render();
 }
 main.addEventListener('keydown', e => {
-  const row = e.target.closest('[data-edit]');
+  const row = e.target.closest('[data-edit], [data-redit]');
   if (row && e.key === 'Enter') { row.click(); return; }
   if (e.key === 'Escape') {
     const f = e.target.closest('form');
-    if (f?.dataset.form === 'edit') cancelEdit();
+    if (f?.dataset.form === 'edit' || f?.dataset.form === 'redit') cancelEdit();
     else if (f) { f.reset(); }
   }
 });
-main.addEventListener('submit', e => { e.preventDefault(); save(e.target); });
+main.addEventListener('submit', e => { e.preventDefault(); e.target.dataset.mode === 'recent' ? saveRecent(e.target) : save(e.target); });
 main.addEventListener('reset', e => setTimeout(() => {
+  if (e.target.dataset.form === 'rnew') {   // クリアは出金元も含めて空にする
+    const f = e.target.elements;
+    if (!e.target.hasAttribute('data-split')) { f.desc.value = f.from.value = f.to.value = f.amt.value = ''; f.date.value = state.lastDate; }
+    delete state.drafts.rnew; state.rnewVals = null; state.recentFrom = '';
+    render(); document.querySelector('form[data-form="rnew"] [name=desc]')?.focus(); return;
+  }
   if (state.drafts.new) { delete state.drafts.new; render(); return; }
   e.target.elements.date.value = state.lastDate; updatePreview(e.target);
   e.target.querySelectorAll('.f').forEach(el => el.classList.remove('err'));
@@ -1080,10 +1452,14 @@ main.addEventListener('input', e => {
   if (e.target.name === 'r' && e.target.value) f.elements.l.value = '';
   updatePreview(f);
 });
-main.addEventListener('change', e => { if (e.target.name === 'desc') quickfill(e.target.closest('form')); });
+main.addEventListener('change', e => {
+  if (e.target.name !== 'desc') return;
+  const f = e.target.closest('form');
+  f.dataset.form === 'rnew' ? quickfillPair(f) : quickfill(f);
+});
 main.addEventListener('focusout', e => {
-  if ((e.target.name === 'l' || e.target.name === 'r' || e.target.dataset.k === 'l' || e.target.dataset.k === 'r') && e.target.value) {
-    const v = parseAmt(e.target.value); if (!isNaN(v)) e.target.value = v ? plain(v, state.selected) : '';
+  if ((['l', 'r', 'amt'].includes(e.target.name) || e.target.dataset.k === 'l' || e.target.dataset.k === 'r') && e.target.value) {
+    const v = parseAmt(e.target.value); if (!isNaN(v)) e.target.value = v ? plain(v, ctx()) : '';
   }
 });
 
@@ -1095,6 +1471,7 @@ main.addEventListener('focusout', e => {
     document.getElementById('tree').innerHTML = `<div class="empty">読み込みに失敗しました<br>${esc(e.message)}</div>`;
     return;
   }
+  loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
     .sort((x, y) => y.count - x.count)[0] || state.book.accounts.find(a => !a.placeholder);

@@ -21,7 +21,7 @@ import signal
 import sqlite3
 import sys
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -227,33 +227,64 @@ class Book:
             })
         return {"account": account, "rows": out}
 
+    TX_COLUMNS = """t.guid, t.post_date, t.enter_date, t.num, t.description, t.currency_guid, c.mnemonic, c.fraction"""
+    SPLIT_COLUMNS = """s.tx_guid, s.guid, s.account_guid, s.memo, s.action, s.reconcile_state,
+                       s.value_num, s.value_denom, s.quantity_num, s.quantity_denom,
+                       a.commodity_guid, c.fraction as acc_fraction, s.lot_guid"""
+
     def transaction(self, tx):
         """取引 1 件の全 split。分割取引の展開表示・編集に使う。"""
         with self.connect() as con:
-            t = con.execute("""
-                select t.guid, t.post_date, t.num, t.description, t.currency_guid, c.mnemonic, c.fraction
+            t = con.execute(f"""
+                select {self.TX_COLUMNS}
                 from transactions t join commodities c on c.guid = t.currency_guid where t.guid = ?""",
                             (tx,)).fetchone()
             if t is None:
                 raise ApiError(404, "取引が見つかりません")
-            splits = con.execute("""
-                select s.guid, s.account_guid, s.memo, s.action, s.reconcile_state,
-                       s.value_num, s.value_denom, s.quantity_num, s.quantity_denom,
-                       a.commodity_guid, c.fraction as acc_fraction, s.lot_guid
+            splits = con.execute(f"""
+                select {self.SPLIT_COLUMNS}
                 from splits s join accounts a on a.guid = s.account_guid
                 left join commodities c on c.guid = a.commodity_guid
                 where s.tx_guid = ? order by s.rowid""", (tx,)).fetchall()
             invoice = con.execute("select 1 from invoices where post_txn = ?", (tx,)).fetchone()
+        return self._tx_payload(t, splits, invoice is not None)
+
+    def recent(self, days):
+        """入力日時（enter_date）が直近 days 日（今日を含む）の取引を、新しい順に返す。"""
+        days = max(1, min(int(days), 366))
+        since = datetime.combine(date.today() - timedelta(days=days - 1), dtime.min).astimezone()
+        threshold = since.astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        where = f"{NORM_ENTER_DATE} >= ?"
+        with self.connect() as con:
+            txs = con.execute(f"""
+                select {self.TX_COLUMNS}
+                from transactions t join commodities c on c.guid = t.currency_guid
+                where {where} order by {NORM_ENTER_DATE} desc limit 3000""", (threshold,)).fetchall()
+            splits = {}
+            for r in con.execute(f"""
+                    select {self.SPLIT_COLUMNS}
+                    from splits s join accounts a on a.guid = s.account_guid
+                    left join commodities c on c.guid = a.commodity_guid
+                    where s.tx_guid in (select t.guid from transactions t where {where})
+                    order by s.rowid""", (threshold,)):
+                splits.setdefault(r["tx_guid"], []).append(r)
+            invoices = {r[0] for r in con.execute("select post_txn from invoices where post_txn is not null")}
+        return {"days": days, "since": since.date().isoformat(),
+                "rows": [self._tx_payload(t, splits.get(t["guid"], []), t["guid"] in invoices) for t in txs]}
+
+    def _tx_payload(self, t, splits, has_invoice):
         fraction = t["fraction"] or 1
+        enter = parse_ts(t["enter_date"])
         reason = None
         if any(s["reconcile_state"] == "y" for s in splits):
             reason = "照合済みの分割を含むため編集できません"
-        elif any(s["lot_guid"] for s in splits) or invoice:
+        elif any(s["lot_guid"] for s in splits) or has_invoice:
             reason = "請求書・ロットに関連付いた取引はまだ編集できません"
         elif any(s["commodity_guid"] != t["currency_guid"] for s in splits):
             reason = "通貨・銘柄の異なる科目を含む取引の分割編集にはまだ対応していません"
         return {
             "guid": t["guid"], "date": local_date(t["post_date"]), "num": t["num"], "desc": t["description"] or "",
+            "enter": enter.astimezone().strftime("%Y-%m-%dT%H:%M") if enter else None,
             "currency": {"mnemonic": t["mnemonic"], "fraction": fraction},
             "editable": reason is None, "reason": reason,
             "splits": [{
@@ -263,6 +294,26 @@ class Book:
                 "quantity": to_number(frac(s["quantity_num"], s["quantity_denom"]), s["acc_fraction"] or 1),
             } for s in splits],
         }
+
+    def quickfill_pair(self, desc):
+        """同じ説明の直近（入力日時順）の 2 科目の取引から、出金元（貸方）・入金先（借方）・金額を返す。"""
+        with self.connect() as con:
+            for (tx,) in con.execute(f"""
+                    select t.guid from transactions t where t.description = ?
+                    order by {NORM_ENTER_DATE} desc limit 20""", (desc,)):
+                splits = con.execute("""
+                    select s.account_guid, s.value_num, s.value_denom, c.fraction
+                    from splits s join transactions t on t.guid = s.tx_guid
+                    join commodities c on c.guid = t.currency_guid where s.tx_guid = ?""", (tx,)).fetchall()
+                if len(splits) != 2 or splits[0][0] == splits[1][0]:
+                    continue
+                credit = next((sp for sp in splits if sp[1] < 0), None)
+                if credit is None:
+                    continue
+                debit = next(sp for sp in splits if sp is not credit)
+                return {"from": credit[0], "to": debit[0],
+                        "amount": to_number(abs(frac(credit[1], credit[2])), credit[3] or 1)}
+        return {}
 
     def quickfill(self, account, desc):
         """同じ説明の直近の取引から、相手科目と金額を返す（GnuCash の QuickFill 相当）。"""
@@ -579,7 +630,15 @@ class Handler(BaseHTTPRequestHandler):
         if method == "GET" and m:
             return self._send(200, b.register(m[1]))
         if method == "GET" and p == "/api/quickfill":
-            return self._send(200, b.quickfill(qs.get("account", [""])[0], qs.get("desc", [""])[0]))
+            account, desc = qs.get("account", [""])[0], qs.get("desc", [""])[0]
+            # account なし = 最近の取引画面の「出金元 → 入金先」用
+            return self._send(200, b.quickfill(account, desc) if account else b.quickfill_pair(desc))
+        if method == "GET" and p == "/api/recent":
+            try:
+                days = int(qs.get("days", ["7"])[0])
+            except ValueError:
+                raise ApiError(400, "days が正しくありません")
+            return self._send(200, b.recent(days))
         if method == "POST" and p == "/api/transactions":
             return self._send(201, b.create(self._body()))
         m = re.fullmatch(r"/api/transactions/([0-9a-f]{32})/copy", p)
