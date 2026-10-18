@@ -894,13 +894,22 @@ function composer(colL, colR, lastBal){
 }
 
 /* ---------- 補完リスト ---------- */
+// <datalist> はブラウザのネイティブな候補表示と結び付いているため、中身が変わっていないのに
+// innerHTML を毎回作り直すと（iOSでは特に）候補表示の更新が固まることがある。
+// 内容が実際に変わった時だけ書き換えるようにする
+const listsCache = {};
+function updateList(id, html){
+  if (listsCache[id] === html) return;
+  listsCache[id] = html;
+  document.getElementById(id).innerHTML = html;
+}
 function renderLists(){
-  document.getElementById('acctList').innerHTML = state.book.accounts
+  updateList('acctList', state.book.accounts
     .filter(a => !a.placeholder && (state.view !== 'account' || a.guid !== state.selected))
-    .map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
-  document.getElementById('acctListAll').innerHTML = state.book.accounts
-    .filter(a => !a.placeholder).map(a => `<option value="${esc(fullName(a.guid))}">`).join('');
-  document.getElementById('descList').innerHTML = state.book.descriptions.map(d => `<option value="${esc(d)}">`).join('');
+    .map(a => `<option value="${esc(fullName(a.guid))}">`).join(''));
+  updateList('acctListAll', state.book.accounts
+    .filter(a => !a.placeholder).map(a => `<option value="${esc(fullName(a.guid))}">`).join(''));
+  updateList('descList', state.book.descriptions.map(d => `<option value="${esc(d)}">`).join(''));
 }
 
 // anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
