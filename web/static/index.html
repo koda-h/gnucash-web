@@ -69,7 +69,13 @@ button,input{font:inherit;color:inherit}
 .search{flex:1;position:relative}
 .search input{width:100%;height:34px;border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:0 10px 0 32px;outline:none}
 .search input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
-.search svg{position:absolute;left:10px;top:9px;color:var(--faint)}
+.search > svg{position:absolute;left:10px;top:9px;color:var(--faint)}
+/* 入力内容のクリアボタン（文字が入っているときだけ表示） */
+.search input:not(:placeholder-shown){padding-right:30px}
+.search .clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:16px;height:16px;border:0;border-radius:50%;
+  padding:0;display:grid;place-items:center;cursor:pointer;background:var(--border-strong);color:var(--surface)}
+.search .clear:hover{background:var(--muted)}
+.search input:placeholder-shown ~ .clear{display:none}
 .icon-btn{height:34px;min-width:34px;border:1px solid var(--border);background:var(--surface);border-radius:8px;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:0 8px}
 .icon-btn:hover{background:var(--hover);color:var(--text)}
 .tree{flex:1;overflow:auto;padding:4px 8px 24px}
@@ -277,6 +283,7 @@ form.busy{opacity:.6;pointer-events:none}
       <label class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="treeQ" placeholder="勘定科目を検索" autocomplete="off">
+        <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </label>
       <button class="icon-btn" id="toggleAll" title="すべて展開／折りたたみ">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
@@ -514,6 +521,7 @@ function renderMain(){
       <label class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="regQ" placeholder="説明・勘定科目で絞り込み" value="${esc(state.q)}" autocomplete="off">
+        <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       </label>
       <span class="spacer"></span>
       ${canWrite() ? `<button class="btn primary" data-new>
@@ -950,6 +958,23 @@ document.getElementById('tree').addEventListener('click', e => {
   if (row) select(row.dataset.id);
 });
 document.getElementById('treeQ').addEventListener('input', e => { state.treeQ = e.target.value; renderSidebar(); });
+
+/* 検索欄のクリア（× ボタン、または Esc キー）。input イベントを発生させて既存の絞り込み処理に任せる */
+function clearSearch(input){
+  if (!input.value) return false;
+  input.value = '';
+  input.dispatchEvent(new Event('input', {bubbles: true}));
+  // 取引一覧の検索欄は描き直されるので、新しい要素にフォーカスする
+  document.getElementById(input.id)?.focus();
+  return true;
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('[data-clear]');
+  if (btn) clearSearch(btn.parentElement.querySelector('input'));
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && (e.target.id === 'treeQ' || e.target.id === 'regQ') && clearSearch(e.target)) e.preventDefault();
+});
 document.getElementById('toggleAll').onclick = () => {
   const parents = state.book.accounts.filter(a => CHILDREN[a.guid]).map(a => a.guid);
   const allOpen = parents.every(p => state.expanded.has(p));
