@@ -44,6 +44,8 @@
 }
 
 *{box-sizing:border-box}
+/* hidden 属性は display を指定した要素でも必ず隠す */
+[hidden]{display:none !important}
 html,body{height:100%}
 body{
   margin:0; background:var(--bg); color:var(--text);
@@ -120,6 +122,7 @@ mark{background:var(--flash);color:inherit;border-radius:2px}
 .btn:hover{background:var(--hover)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.primary:hover{filter:brightness(1.07)}
+.btn:disabled{opacity:.5;cursor:default;filter:none}
 .btn.ghost{border-color:transparent;background:none;color:var(--muted)}
 .btn.ghost:hover{color:var(--text);background:var(--surface-2)}
 .btn.danger{border-color:transparent;background:none;color:var(--neg)}
@@ -169,6 +172,37 @@ kbd{font:11px Inter,sans-serif;border:1px solid var(--border-strong);border-bott
 .ocard .n{font-weight:500}
 .ocard .s{font-size:12px;color:var(--muted)}
 .ocard .v{font-size:18px;font-weight:600;margin-top:8px}
+
+/* パスキー認証 */
+.auth-screen{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:16px;overflow:auto}
+.auth-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:30px 24px 22px;box-shadow:var(--shadow-lg);text-align:center}
+.auth-card .logo{margin:0 auto 14px;width:44px;height:44px;font-size:19px;border-radius:12px}
+.auth-card h1{font-size:20px;margin:0 0 6px;letter-spacing:-.01em}
+.auth-card p{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.7}
+.auth-card label{display:block;text-align:left;font-size:12px;color:var(--muted);margin:0 0 4px}
+.auth-card .f{height:40px;margin-bottom:12px}
+.auth-card .f.token{text-align:center;font-size:16px;letter-spacing:.12em;font-variant-numeric:tabular-nums;text-transform:uppercase}
+.auth-card .btn{width:100%;height:44px;justify-content:center;font-size:15px}
+.auth-msg{min-height:20px;margin-top:10px;font-size:12.5px;color:var(--neg);line-height:1.6}
+.auth-note{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);font-size:11.5px;color:var(--faint);line-height:1.8;text-align:left}
+.auth-note code{font-size:11px;background:var(--surface-2);border-radius:4px;padding:1px 5px;color:var(--muted);word-break:break-all}
+.side-foot{border-top:1px solid var(--border);padding:8px;display:flex;gap:4px}
+.side-foot button{flex:1;border:0;background:none;color:var(--muted);height:32px;border-radius:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-size:13px}
+.side-foot button:hover{background:var(--hover);color:var(--text)}
+dialog.keys{border:1px solid var(--border);border-radius:14px;background:var(--surface);color:var(--text);padding:0;width:min(500px, calc(100vw - 32px));box-shadow:var(--shadow-lg)}
+dialog.keys::backdrop{background:rgba(0,0,0,.5)}
+.keys-h{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)}
+.keys-h h2{font-size:16px;margin:0}
+.keys-list{padding:6px 12px;max-height:50vh;overflow:auto}
+.key-item{display:flex;align-items:center;gap:12px;padding:10px 8px;border-bottom:1px solid var(--border)}
+.key-item:last-child{border-bottom:0}
+.key-item .k-name{font-weight:500}
+.key-item .k-meta{font-size:12px;color:var(--muted)}
+.key-item .k-body{flex:1;min-width:0}
+.keys-add{padding:14px 20px 18px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
+.keys-add .row2{display:flex;gap:8px}
+.keys-add .f{flex:1}
+.keys-add .hint{display:block;margin-top:8px}
 
 /* 最近の取引 */
 .nav-recent{margin:0 8px 10px;width:calc(100% - 16px);display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:0;border-radius:9px;
@@ -332,6 +366,7 @@ form.busy{opacity:.6;pointer-events:none}
 </style>
 </head>
 <body>
+<div class="auth-screen" id="authScreen" hidden></div>
 <div class="app" id="app">
   <aside class="sidebar">
     <div class="brand">
@@ -355,6 +390,10 @@ form.busy{opacity:.6;pointer-events:none}
       </button>
     </div>
     <nav class="tree" id="tree" role="tree"></nav>
+    <div class="side-foot" id="sideFoot" hidden>
+      <button type="button" data-keys><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M17 6l2 2M15 8l2 2"/></svg>パスキー</button>
+      <button type="button" data-logout><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg>ログアウト</button>
+    </div>
   </aside>
   <main class="main" id="main"></main>
 </div>
@@ -362,6 +401,7 @@ form.busy{opacity:.6;pointer-events:none}
 <datalist id="acctList"></datalist>
 <datalist id="acctListAll"></datalist>
 <datalist id="descList"></datalist>
+<dialog class="keys" id="keysDialog"></dialog>
 
 
 <script>
@@ -419,6 +459,7 @@ let A = {}, CHILDREN = {}, ROOTS = [], TOTAL = {};
 async function api(method, url, body){
   const res = await fetch(url, {method, headers: body ? {'Content-Type':'application/json'} : {}, body: body ? JSON.stringify(body) : undefined});
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && data.auth && !url.startsWith('/api/auth/')) showAuth();   // ログイン切れ
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
@@ -1463,8 +1504,167 @@ main.addEventListener('focusout', e => {
   }
 });
 
+/* ---------- パスキー認証 ---------- */
+const b64u = {
+  enc: buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0)).buffer,
+};
+const keyIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 8.2-8.2M17 6l2 2M15 8l2 2"/></svg>';
+function passkeyError(e){
+  if (e?.name === 'NotAllowedError') return 'キャンセルされたか、時間切れになりました。もう一度お試しください';
+  if (e?.name === 'InvalidStateError') return 'このパスキーは既に登録されています';
+  if (e?.name === 'SecurityError') return 'このアドレスではパスキーを使えません。設定した URL（GNUCASH_AUTH_ORIGIN）で開いてください';
+  return e?.message || String(e);
+}
+// 端末の種類から、パスキーの名前の初期値を作る（後で一覧に表示して区別するため）
+function defaultKeyName(){
+  const ua = navigator.userAgent;
+  const os = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android' : /Mac/.test(ua) ? 'Mac' : /Windows/.test(ua) ? 'Windows' : '端末';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  return br ? `${os}・${br}` : os;
+}
+// パスキーを作成して登録する（初回は token、2 本目以降はログイン中であること）
+async function createPasskey(body){
+  const o = await api('POST', '/api/auth/register/options', body);
+  const cred = await navigator.credentials.create({publicKey: {...o, challenge: b64u.dec(o.challenge),
+    user: {...o.user, id: b64u.dec(o.user.id)}, excludeCredentials: (o.excludeCredentials || []).map(c => ({...c, id: b64u.dec(c.id)}))}});
+  return api('POST', '/api/auth/register', {...body, credential: {
+    id: cred.id, rawId: b64u.enc(cred.rawId), type: cred.type, authenticatorAttachment: cred.authenticatorAttachment ?? null,
+    response: {clientDataJSON: b64u.enc(cred.response.clientDataJSON), attestationObject: b64u.enc(cred.response.attestationObject),
+      transports: cred.response.getTransports?.() || []},
+    clientExtensionResults: cred.getClientExtensionResults?.() || {}}});
+}
+// ID 入力なしで、端末（1Password など）に保存されたパスキーでログインする
+async function loginPasskey(){
+  const o = await api('POST', '/api/auth/login/options');
+  const cred = await navigator.credentials.get({publicKey: {...o, challenge: b64u.dec(o.challenge),
+    allowCredentials: (o.allowCredentials || []).map(c => ({...c, id: b64u.dec(c.id)}))}});
+  return api('POST', '/api/auth/login', {credential: {
+    id: cred.id, rawId: b64u.enc(cred.rawId), type: cred.type, authenticatorAttachment: cred.authenticatorAttachment ?? null,
+    response: {clientDataJSON: b64u.enc(cred.response.clientDataJSON), authenticatorData: b64u.enc(cred.response.authenticatorData),
+      signature: b64u.enc(cred.response.signature), userHandle: cred.response.userHandle ? b64u.enc(cred.response.userHandle) : null},
+    clientExtensionResults: cred.getClientExtensionResults?.() || {}}});
+}
+
+async function showAuth(st){
+  st ||= await api('GET', '/api/auth/status').catch(() => null);
+  if (!st || !st.enabled || st.authenticated) return;
+  state.auth = st;
+  document.getElementById('keysDialog').open && document.getElementById('keysDialog').close();
+  const el = document.getElementById('authScreen');
+  const wrongOrigin = st.origin && location.origin !== st.origin;
+  const unsupported = !window.isSecureContext || !window.PublicKeyCredential;
+  const note = wrongOrigin
+    ? `<div class="auth-msg">このページは <a href="${esc(st.origin)}">${esc(st.origin)}</a> で開いてください（パスキーは設定したアドレスでのみ使えます）</div>`
+    : unsupported ? '<div class="auth-msg">このブラウザまたはアドレスではパスキーを使えません（https、または http://localhost で開いてください）</div>' : '';
+  el.innerHTML = st.hasCredentials ? `
+    <form class="auth-card" data-auth="login">
+      <div class="logo">G</div>
+      <h1>GnuCash Web</h1>
+      <p>保存済みのパスキー（1Password など）でログインします</p>
+      <button type="submit" class="btn primary" ${wrongOrigin || unsupported ? 'disabled' : ''}>${keyIcon}パスキーでログイン</button>
+      <div class="auth-msg" data-msg></div>${note}
+    </form>` : `
+    <form class="auth-card" data-auth="setup">
+      <div class="logo">G</div>
+      <h1>パスキーの初回登録</h1>
+      <p>サーバのログに表示された<b>登録用トークン</b>を入力して、このアプリ用のパスキーを作成します</p>
+      <label for="authToken">登録用トークン</label>
+      <input class="f token" id="authToken" name="token" placeholder="XXXX-XXXX-XXXX" autocomplete="one-time-code" autocapitalize="characters" required>
+      <label for="authName">パスキーの名前（一覧で区別するため）</label>
+      <input class="f" id="authName" name="name" value="${esc(defaultKeyName())}" maxlength="60">
+      <button type="submit" class="btn primary" ${wrongOrigin || unsupported ? 'disabled' : ''}>${keyIcon}パスキーを作成して登録</button>
+      <div class="auth-msg" data-msg></div>${note}
+      <div class="auth-note">トークンの確認方法：<br>
+        Docker の場合 <code>docker compose logs gnucash-web | grep トークン</code><br>
+        直接起動の場合は、起動したターミナルに表示されています</div>
+    </form>`;
+  el.hidden = false;
+  el.querySelector('input[name=token], button[type=submit]')?.focus();
+}
+document.getElementById('authScreen').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, msg = f.querySelector('[data-msg]'), btn = f.querySelector('button[type=submit]');
+  msg.textContent = ''; btn.disabled = true;
+  try {
+    if (f.dataset.auth === 'setup') await createPasskey({token: f.elements.token.value, name: f.elements.name.value});
+    else await loginPasskey();
+    state.auth = {...state.auth, authenticated: true, hasCredentials: true};
+    document.getElementById('authScreen').hidden = true;
+    state.book ? await refresh() : await boot();
+  } catch (err) {
+    msg.textContent = passkeyError(err);
+  } finally { btn.disabled = false; }
+});
+
+// サイドバー下部：パスキー管理とログアウト
+document.getElementById('sideFoot').addEventListener('click', async e => {
+  if (e.target.closest('[data-logout]')) {
+    await api('POST', '/api/auth/logout').catch(() => {});
+    state.auth = {...state.auth, authenticated: false};
+    showAuth();
+  }
+  if (e.target.closest('[data-keys]')) openKeys();
+});
+async function openKeys(){
+  const d = document.getElementById('keysDialog');
+  d.innerHTML = '<div class="loading">読み込み中…</div>';
+  d.showModal();
+  await renderKeys();
+}
+async function renderKeys(message = ''){
+  const d = document.getElementById('keysDialog');
+  let list;
+  try { list = (await api('GET', '/api/auth/credentials')).credentials; } catch (e) { d.close(); return; }
+  const fmt = iso => iso ? new Date(iso).toLocaleString('ja-JP', {year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '未使用';
+  d.innerHTML = `
+    <div class="keys-h"><h2>パスキー</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
+    <div class="keys-list">${list.map(c => `
+      <div class="key-item">
+        <span style="color:var(--muted)">${keyIcon}</span>
+        <div class="k-body"><div class="k-name">${esc(c.name)}</div>
+          <div class="k-meta">登録 ${fmt(c.created)}・最終使用 ${fmt(c.last_used)}${c.backed_up ? '・同期あり' : ''}</div></div>
+        <button type="button" class="btn danger" data-del-key="${esc(c.id)}" data-name="${esc(c.name)}">削除</button>
+      </div>`).join('') || '<div class="empty">登録されたパスキーはありません</div>'}</div>
+    <form class="keys-add" data-add-key>
+      <div class="row2"><input class="f" name="name" value="${esc(defaultKeyName())}" maxlength="60" aria-label="パスキーの名前">
+        <button type="submit" class="btn primary">${keyIcon}追加</button></div>
+      <span class="hint">この端末・ブラウザで新しいパスキーを作成します。別の端末（スマートフォンなど）はその端末でログインしてから追加してください</span>
+      <div class="auth-msg" data-msg>${esc(message)}</div>
+    </form>`;
+}
+document.getElementById('keysDialog').addEventListener('click', async e => {
+  const d = document.getElementById('keysDialog');
+  if (e.target.closest('[data-close]') || e.target === d) return d.close();
+  const del = e.target.closest('[data-del-key]');
+  if (!del) return;
+  const last = d.querySelectorAll('[data-del-key]').length === 1;
+  const warn = last ? '\n\n最後のパスキーです。削除するとすべての端末からログアウトされ、再登録にはサーバのログに出る登録用トークンが必要になります。' : '';
+  if (!confirm(`パスキー「${del.dataset.name}」を削除しますか？${warn}`)) return;
+  try {
+    const res = await api('DELETE', `/api/auth/credentials/${del.dataset.delKey}`);
+    if (res.remaining === 0) { d.close(); state.auth = {...state.auth, authenticated: false, hasCredentials: false}; showAuth(); }
+    else renderKeys('削除しました');
+  } catch (err) { renderKeys(err.message); }
+});
+document.getElementById('keysDialog').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button[type=submit]');
+  btn.disabled = true;
+  try { const r = await createPasskey({name: f.elements.name.value}); renderKeys(`「${r.name}」を追加しました`); }
+  catch (err) { f.querySelector('[data-msg]').textContent = passkeyError(err); btn.disabled = false; }
+});
+
 /* ---------- 起動 ---------- */
 (async () => {
+  // パスキー認証が有効で未ログインなら、ログイン画面を先に出す
+  const st = await api('GET', '/api/auth/status').catch(() => ({enabled: false}));
+  state.auth = st;
+  if (st.enabled && !st.authenticated) return showAuth(st);
+  await boot();
+})();
+async function boot(){
+  document.getElementById('sideFoot').hidden = !state.auth?.enabled;
   try {
     await loadBook();
   } catch (e) {
@@ -1477,7 +1677,7 @@ main.addEventListener('focusout', e => {
     .sort((x, y) => y.count - x.count)[0] || state.book.accounts.find(a => !a.placeholder);
   if (first && !matchMedia('(max-width: 820px)').matches) await select(first.guid);
   else render();
-})();
+}
 </script>
 </body>
 </html>

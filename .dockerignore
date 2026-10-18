@@ -1,4 +1,5 @@
 # イメージにはアプリ（web/）だけを入れる。GnuCash ファイルやバックアップは含めない
 *
 !web/
+!requirements.txt
 web/__pycache__/

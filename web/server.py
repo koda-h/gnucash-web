@@ -10,9 +10,13 @@
 各オプションは環境変数 GNUCASH_FILE / GNUCASH_HOST / GNUCASH_PORT / GNUCASH_WRITE /
 GNUCASH_FORCE / GNUCASH_BACKUP_DIR でも指定できる（Docker 用）。
 
+パスキー認証（GNUCASH_AUTH=1）を使う場合は py_webauthn が必要（pip install -r requirements.txt）。
+設定は GNUCASH_AUTH_RP_ID / GNUCASH_AUTH_ORIGIN / GNUCASH_AUTH_SESSION_DAYS / GNUCASH_AUTH_FILE。
+
 スキーマは docs/gnucash-db-schema.md を参照。
 """
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -598,16 +602,22 @@ class Book:
 
 class Handler(BaseHTTPRequestHandler):
     book: Book = None
+    auth = None          # パスキー認証（無効なら None）
 
     def log_message(self, fmt, *args):
         sys.stderr.write("%s %s\n" % (self.command, self.path))
 
-    def _send(self, status, payload, ctype="application/json; charset=utf-8"):
+    def _send(self, status, payload, ctype="application/json; charset=utf-8", cookie=None):
         body = payload if isinstance(payload, bytes) else json.dumps(payload, ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        if cookie:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         self.wfile.write(body)
 
@@ -623,7 +633,18 @@ class Handler(BaseHTTPRequestHandler):
         p, qs = url.path, parse_qs(url.query)
         b = self.book
         if method == "GET" and p in ("/", "/index.html"):
+            # 画面は誰でも読める（ログイン画面を含むため）。データはすべて API 側で保護する
             return self._send(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
+        if self.auth:
+            authed = self.auth.is_authenticated(self.headers.get("Cookie"))
+            if method != "GET" and not self.auth.check_origin(self.headers.get("Origin"), self.headers.get("Referer")):
+                raise ApiError(403, "別のサイトからの操作は受け付けません")
+            if p.startswith("/api/auth/"):
+                return self._route_auth(method, p, authed)
+            if not authed:
+                return self._send(401, {"error": "ログインが必要です", "auth": True})
+        elif p == "/api/auth/status":
+            return self._send(200, {"enabled": False, "authenticated": True})
         if method == "GET" and p == "/api/book":
             return self._send(200, b.book())
         m = re.fullmatch(r"/api/accounts/([0-9a-f]{32})/register", p)
@@ -655,11 +676,40 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, b.delete(m[1]))
         raise ApiError(404, f"Not found: {unquote(p)}")
 
+    def _route_auth(self, method, p, authed):
+        a = self.auth
+        if method == "GET" and p == "/api/auth/status":
+            return self._send(200, a.status(authed))
+        if method == "POST" and p == "/api/auth/login/options":
+            return self._send(200, a.authentication_options())
+        if method == "POST" and p == "/api/auth/login":
+            res = a.authenticate(self._body())
+            return self._send(200, res, cookie=a.make_cookie())
+        if method == "POST" and p == "/api/auth/register/options":
+            return self._send(200, a.registration_options(self._body(), authed))
+        if method == "POST" and p == "/api/auth/register":
+            res = a.register(self._body(), authed)
+            return self._send(200, res, cookie=a.make_cookie())
+        if method == "POST" and p == "/api/auth/logout":
+            return self._send(200, {"ok": True}, cookie=a.clear_cookie())
+        if not authed:
+            return self._send(401, {"error": "ログインが必要です", "auth": True})
+        if method == "GET" and p == "/api/auth/credentials":
+            return self._send(200, a.list_credentials())
+        m = re.fullmatch(r"/api/auth/credentials/([A-Za-z0-9_-]+)", p)
+        if method == "DELETE" and m:
+            return self._send(200, a.delete_credential(m[1]))
+        raise ApiError(404, f"Not found: {unquote(p)}")
+
     def _handle(self, method):
         try:
             self._route(method)
         except ApiError as e:
             self._send(e.status, {"error": str(e)})
+        except Exception as e:   # 認証まわりのエラー（AuthError）も JSON で返す
+            if type(e).__name__ != "AuthError":
+                raise
+            self._send(e.status, {"error": str(e), "auth": e.status == 401})
         except sqlite3.Error as e:
             self._send(500, {"error": f"データベースエラー: {e}"})
 
@@ -667,6 +717,29 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self): self._handle("POST")
     def do_PUT(self): self._handle("PUT")
     def do_DELETE(self): self._handle("DELETE")
+
+
+def setup_auth(path, port):
+    """パスキー認証の設定を環境変数から読み込む。"""
+    try:
+        from auth import Auth
+    except ImportError:
+        sys.exit("パスキー認証には py_webauthn が必要です: pip install -r requirements.txt")
+    rp_id = os.environ.get("GNUCASH_AUTH_RP_ID", "localhost")
+    origin = os.environ.get("GNUCASH_AUTH_ORIGIN") or f"http://localhost:{port}"
+    host = urlparse(origin).hostname or ""
+    if host != rp_id and not host.endswith("." + rp_id):
+        sys.exit(f"GNUCASH_AUTH_ORIGIN（{origin}）のホスト名が GNUCASH_AUTH_RP_ID（{rp_id}）と一致しません")
+    try:
+        ipaddress.ip_address(rp_id.strip("[]"))
+        sys.exit("パスキーは IP アドレスでは使えません。GNUCASH_AUTH_RP_ID にはドメイン名（localhost など）を指定してください")
+    except ValueError:
+        pass
+    store = os.environ.get("GNUCASH_AUTH_FILE") or str(path.parent / "auth.json")
+    days = float(os.environ.get("GNUCASH_AUTH_SESSION_DAYS", "30"))
+    a = Auth(store, rp_id, origin, days)
+    print(f"パスキー認証: 有効（RP ID {rp_id} / {origin} / ログイン有効期間 {days:g} 日 / {store}）", flush=True)
+    return a
 
 
 def env_flag(name):
@@ -686,6 +759,8 @@ def main():
                     help="gnclock（デスクトップ版のロック）があっても書き込む")
     ap.add_argument("--backup-dir", default=os.environ.get("GNUCASH_BACKUP_DIR"),
                     help="バックアップの保存先（既定はファイルと同じフォルダの backup/）")
+    ap.add_argument("--auth", action="store_true", default=env_flag("GNUCASH_AUTH"),
+                    help="パスキー認証を有効にする（py_webauthn が必要）")
     args = ap.parse_args()
 
     # docker stop（SIGTERM）で速やかに終了する。PID 1 ではハンドラがないとシグナルが無視されるため
@@ -706,6 +781,8 @@ def main():
         print(f"バックアップ: {backup}")
 
     Handler.book = Book(str(path), args.write, args.force)
+    if args.auth:
+        Handler.auth = setup_auth(path, args.port)
     with Handler.book.connect() as con:
         locks = Handler.book.locked_by(con)
     if locks:

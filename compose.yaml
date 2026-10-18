@@ -15,4 +15,9 @@ services:
       GNUCASH_WRITE: ${GNUCASH_WRITE:-0}
       GNUCASH_FORCE: ${GNUCASH_FORCE:-0}
       TZ: ${GNUCASH_TZ:-Asia/Tokyo}
+      # パスキー認証（.env で設定）。認証情報は data/auth.json に保存される
+      GNUCASH_AUTH: ${GNUCASH_AUTH:-0}
+      GNUCASH_AUTH_RP_ID: ${GNUCASH_AUTH_RP_ID:-localhost}
+      GNUCASH_AUTH_ORIGIN: ${GNUCASH_AUTH_ORIGIN:-http://localhost:8000}
+      GNUCASH_AUTH_SESSION_DAYS: ${GNUCASH_AUTH_SESSION_DAYS:-30}
     restart: unless-stopped

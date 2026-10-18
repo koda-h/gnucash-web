@@ -12,6 +12,8 @@ ENV PYTHONUNBUFFERED=1 \
     GNUCASH_PORT=8000
 
 WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 COPY web/ ./web/
 
 EXPOSE 8000

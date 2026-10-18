@@ -1,6 +1,6 @@
 # GnuCash Web
 
-GnuCash の SQLite ファイル（`.gnucash`）を直接読み書きする Web 版。Python 標準ライブラリのみで動く（追加インストール不要）。
+GnuCash の SQLite ファイル（`.gnucash`）を直接読み書きする Web 版。Python 標準ライブラリのみで動く（パスキー認証を使う場合のみ py_webauthn が必要）。
 
 ## データの置き場所
 
@@ -52,11 +52,56 @@ http://127.0.0.1:8000/ を開く。停止は `docker compose down`、ログは `
 - イメージには `web/` だけが入り、GnuCash ファイルやバックアップは含まれない（`.dockerignore`）
 - コード（`web/`）を変更したら `docker compose up -d --build` で作り直す
 
+## パスキー認証
+
+`.env` の `GNUCASH_AUTH=1` でログインが必要になる（ID・パスワードなし、パスキーのみ）。利用者は 1 人を想定。
+
+### 有効にする手順（このMacだけで使う場合）
+
+1. `.env` を `GNUCASH_AUTH=1`、`GNUCASH_AUTH_RP_ID=localhost`、`GNUCASH_AUTH_ORIGIN=http://localhost:8000` にする
+2. `docker compose up -d --build`
+3. ログに出る登録用トークンを確認する：`docker compose logs gnucash-web | grep トークン`
+4. **http://localhost:8000/** を開き（`127.0.0.1` では使えない）、トークンを入力して「パスキーを作成して登録」。1Password の保存画面が出たら保存する
+5. 以降は「パスキーでログイン」だけでログインできる（有効期間 30 日）
+
+### 外出先から使う（Tailscale 経由・推奨）
+
+インターネットに直接公開せず、Tailscale の VPN 内だけで使う。正式な HTTPS 証明書とドメイン名が自動で付く。
+
+1. Mac とスマートフォンに Tailscale を入れ、同じアカウントでログインする
+2. Tailscale の管理画面（DNS 設定）で MagicDNS と HTTPS Certificates を有効にする
+3. Mac で `tailscale serve --bg 8000` を実行する（`https://<マシン名>.<tailnet名>.ts.net` → `localhost:8000` に転送される）
+4. `.env` を次のようにして `docker compose up -d`
+   ```
+   GNUCASH_AUTH=1
+   GNUCASH_AUTH_RP_ID=<マシン名>.<tailnet名>.ts.net
+   GNUCASH_AUTH_ORIGIN=https://<マシン名>.<tailnet名>.ts.net
+   ```
+5. Mac からも `https://<マシン名>.<tailnet名>.ts.net` で開いて初回登録する（パスキーはこのドメインに結び付く。localhost で登録したものは使えない）
+
+公開ポートは `127.0.0.1:8000` のままでよい（LAN には公開されず、Tailscale 経由でのみ外から届く）。
+
+### パスキーの管理・復旧
+
+- 左メニュー下の「パスキー」から一覧・追加・削除。別の端末は、その端末でログインしてから追加する（1Password のパスキーは端末間で同期されるので、通常は追加不要）
+- パスキーをすべて失った場合：`.env` を `GNUCASH_AUTH=0` にして起動すれば認証なしで入れる。または `data/auth.json` を削除して起動すると、新しい登録用トークンが出る
+- 最後の 1 本を削除すると全端末がログアウトされ、新しい登録用トークンがログに出る
+
+### 保存場所と注意
+
+- 認証情報は `data/auth.json`（Git の管理外）。公開鍵のみで秘密鍵は持たないが、**ログイン状態の署名鍵を含むので外部に出さないこと**
+- 直接起動（Docker なし）で認証を使う場合は py_webauthn が必要：
+  ```bash
+  python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+  GNUCASH_AUTH=1 .venv/bin/python web/server.py --write
+  ```
+
 ## 構成
 
 | ファイル | 内容 |
 |---|---|
 | `server.py` | HTTP サーバ + SQLite アクセス（API） |
+| `auth.py` | パスキー（WebAuthn）認証。`GNUCASH_AUTH=1` のときだけ読み込まれる |
 | `static/index.html` | 画面（勘定科目ツリー・登録簿・入力フォーム） |
 
 ## 画面
