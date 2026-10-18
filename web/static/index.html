@@ -248,6 +248,13 @@ dialog.keys::backdrop{background:rgba(0,0,0,.5)}
 .rform{padding:14px 20px 12px;border-bottom:1px solid var(--border-strong);background:var(--surface)}
 .rform.redit{background:var(--accent-soft);border-bottom:1px solid var(--border)}
 .rform .composer-title{margin-bottom:8px}
+/* 最近の取引画面の「新しい取引」欄の開閉（一覧をより多く見せたいとき用） */
+form[data-form="rnew"] .composer-title{cursor:pointer;user-select:none}
+form[data-form="rnew"] .composer-title svg{transition:transform .15s}
+form[data-form="rnew"].open .composer-title svg{transform:rotate(45deg)}
+form[data-form="rnew"]:not(.open) > :not(.composer-title){display:none}
+form[data-form="rnew"]:not(.open){padding-top:14px;padding-bottom:14px}
+form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--accent)}
 .pgrid{display:grid;grid-template-columns:140px minmax(130px,1fr) minmax(170px,1.15fr) 32px minmax(170px,1.15fr) 120px;gap:10px;align-items:end}
 .fl{display:flex;flex-direction:column;gap:4px;min-width:0}
 .fl > span{font-size:11px;color:var(--faint)}
@@ -458,6 +465,7 @@ const state = {
   recent: null,         // /api/recent の結果
   recentDays: 7,        // 今日 = 1 / 7 / 30
   recentFrom: '',       // 連続入力のため、追加後も残す出金元
+  recentComposerOpen: true, // 最近の取引画面の「新しい取引」欄の開閉状態
   rnewVals: null,       // 描き直しで入力途中の内容が消えないよう退避
   added: new Set(),     // この画面で追加した取引（「追加」の印を付ける）
   reg: null,          // {account, rows}
@@ -1205,8 +1213,9 @@ function pairFields(v){
 }
 function recentComposer(){
   const d = state.drafts.rnew, v = state.rnewVals || {};
-  return `<form class="rform" data-form="rnew" data-mode="recent" ${d ? 'data-split' : ''} autocomplete="off">
-    <div class="composer-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>新しい取引</div>
+  const open = state.recentComposerOpen || !!d;
+  return `<form class="rform ${open ? 'open' : ''}" data-form="rnew" data-mode="recent" ${d ? 'data-split' : ''} autocomplete="off">
+    <div class="composer-title" data-toggle-rcomposer><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>新しい取引</div>
     <div class="pgrid">${pairFields({date: d?.date ?? v.date ?? state.lastDate, desc: d?.desc ?? v.desc ?? '',
       from: v.from || state.recentFrom || defaultAccountName('不明-JPY'),
       to: v.to || defaultAccountName('貸借不一致-JPY'), amt: v.amt ?? '', multi: !!d, keepNote: !d})}</div>
@@ -1452,6 +1461,13 @@ main.addEventListener('click', e => {
     const c = document.querySelector('form.composer'); c?.classList.add('open');
     c?.querySelector('[name=desc]')?.focus({preventScroll: true});
     const sc = document.getElementById('scroll'); if (sc) sc.scrollTop = sc.scrollHeight;
+    return;
+  }
+  if (t.closest('[data-toggle-rcomposer]')) {
+    state.recentComposerOpen = !state.recentComposerOpen;
+    const c = t.closest('form');
+    c?.classList.toggle('open', state.recentComposerOpen);
+    if (state.recentComposerOpen) c?.querySelector('[name=desc]')?.focus({preventScroll: true});
     return;
   }
   if (t.closest('[data-cancel]')) { cancelEdit(); return; }
