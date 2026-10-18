@@ -112,6 +112,21 @@ class Book:
     def locked_by(self, con):
         return [dict(r) for r in con.execute("select Hostname, PID from gnclock")]
 
+    def ensure_indexes(self):
+        """取引数が多いと enter_date/post_date の正規化式がフルスキャンになる（#59）ため、
+        書き込み可（--write）で起動したときにインデックスを作っておく。読み取り専用では変更できないため何もしない。"""
+        if not self.writable:
+            return
+        # CREATE INDEX の式にはテーブルエイリアス（t.）を書けないため、列名だけの式を使う
+        norm_enter = NORM_ENTER_DATE.replace("t.", "")
+        norm_post = NORM_POST_DATE.replace("t.", "")
+        try:
+            with self.connect() as con:
+                con.execute(f"create index if not exists idx_tx_enter_date_norm on transactions ({norm_enter})")
+                con.execute(f"create index if not exists idx_tx_post_date_norm on transactions ({norm_post})")
+        except sqlite3.OperationalError as e:
+            print(f"インデックス作成に失敗しました（続行します）: {e}", file=sys.stderr)
+
     # ---- 読み取り
 
     def book(self):
@@ -132,9 +147,17 @@ class Book:
                     "select account_guid, sum(quantity_num), quantity_denom, count(*) from splits group by 1, 3"):
                 own[g] = own.get(g, Fraction(0)) + frac(n, d)
                 count[g] = count.get(g, 0) + c
-            descs = [r[0] for r in con.execute(f"""
-                select t.description from transactions t where t.description <> ''
-                group by t.description order by max({NORM_POST_DATE}) desc limit 1000""")]
+            # group by + max() は取引全件を読む必要があり取引数が多いと遅い（#59）ため、
+            # 日付の新しい順に一定件数だけ読んで重複を除く方式にする（NORM_POST_DATE のインデックスがあれば使われる）
+            descs, seen = [], set()
+            for (desc,) in con.execute(f"""
+                    select t.description from transactions t where t.description <> ''
+                    order by {NORM_POST_DATE} desc limit 5000"""):
+                if desc not in seen:
+                    seen.add(desc)
+                    descs.append(desc)
+                    if len(descs) >= 1000:
+                        break
             currency = con.execute("""
                 select c.mnemonic from transactions t join commodities c on c.guid = t.currency_guid
                 group by 1 order by count(*) desc limit 1""").fetchone()
@@ -781,6 +804,7 @@ def main():
         print(f"バックアップ: {backup}")
 
     Handler.book = Book(str(path), args.write, args.force)
+    Handler.book.ensure_indexes()
     if args.auth:
         Handler.auth = setup_auth(path, args.port)
     with Handler.book.connect() as con:
