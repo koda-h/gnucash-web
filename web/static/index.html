@@ -81,6 +81,13 @@ input{font-size:16px}
   padding:0;display:grid;place-items:center;cursor:pointer;background:var(--border-strong);color:var(--surface)}
 .search .clear:hover{background:var(--muted)}
 .search input:placeholder-shown ~ .clear{display:none}
+/* 出金元・入金先欄のクリアボタン（検索欄と同じ見た目） */
+.fclear{position:relative}
+.fclear .f:not(:placeholder-shown){padding-right:30px}
+.fclear .clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:16px;height:16px;border:0;border-radius:50%;
+  padding:0;display:grid;place-items:center;cursor:pointer;background:var(--border-strong);color:var(--surface)}
+.fclear .clear:hover{background:var(--muted)}
+.fclear .f:placeholder-shown ~ .clear{display:none}
 .icon-btn{height:34px;min-width:34px;border:1px solid var(--border);background:var(--surface);border-radius:8px;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:0 8px}
 .icon-btn:hover{background:var(--hover);color:var(--text)}
 .tree{flex:1;overflow:auto;padding:4px 8px 24px}
@@ -971,6 +978,11 @@ function resolveAccount(text){
   const byName = state.book.accounts.filter(a => a.name === t || fullName(a.guid).endsWith(':' + t));
   return byName.length === 1 ? byName[0].guid : null;
 }
+// 科目名（末端名）から完全な科目パス名を引く。見つからなければ空文字（新しい取引の出金元・入金先のデフォルト用）
+function defaultAccountName(name){
+  const a = state.book.accounts.find(a => a.name === name);
+  return a ? fullName(a.guid) : '';
+}
 
 function readForm(form, multi){
   const g = n => form.elements[n];
@@ -1182,10 +1194,13 @@ function pairFields(v){
     <label class="fl c-date"><span>日付</span><input class="f" type="date" name="date" value="${v.date}" required></label>
     <label class="fl c-desc"><span>説明</span><input class="f" name="desc" value="${esc(v.desc)}" placeholder="説明（過去の取引から補完）" list="descList" autocomplete="off"></label>
     <label class="fl c-from"><span>出金元${v.keepNote ? '<span class="keep-note">追加後も残る</span>' : ''}</span>
-      <input class="f" name="from" value="${esc(v.from)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 負債:クレジットカード:…'}" list="acctList" autocomplete="off" ${dis}></label>
+      <div class="fclear"><input class="f" name="from" value="${esc(v.from)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 負債:クレジットカード:…'}" list="acctList" autocomplete="off" ${dis}>
+      <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア" ${dis}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div></label>
     <button type="button" class="swap" data-swap title="出金元と入金先を入れ替え" aria-label="出金元と入金先を入れ替え" ${dis}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg></button>
-    <label class="fl c-to"><span>入金先</span><input class="f" name="to" value="${esc(v.to)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 費用:食費'}" list="acctList" autocomplete="off" ${dis}></label>
+    <label class="fl c-to"><span>入金先</span>
+      <div class="fclear"><input class="f" name="to" value="${esc(v.to)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 費用:食費'}" list="acctList" autocomplete="off" ${dis}>
+      <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア" ${dis}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div></label>
     <label class="fl c-amt"><span>金額</span><input class="f r num" name="amt" value="${esc(v.amt)}" placeholder="0" inputmode="decimal" autocomplete="off" ${dis}></label>`;
 }
 function recentComposer(){
@@ -1193,7 +1208,8 @@ function recentComposer(){
   return `<form class="rform" data-form="rnew" data-mode="recent" ${d ? 'data-split' : ''} autocomplete="off">
     <div class="composer-title"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>新しい取引</div>
     <div class="pgrid">${pairFields({date: d?.date ?? v.date ?? state.lastDate, desc: d?.desc ?? v.desc ?? '',
-      from: v.from ?? state.recentFrom, to: v.to ?? '', amt: v.amt ?? '', multi: !!d, keepNote: !d})}</div>
+      from: v.from || state.recentFrom || defaultAccountName('不明-JPY'),
+      to: v.to || defaultAccountName('貸借不一致-JPY'), amt: v.amt ?? '', multi: !!d, keepNote: !d})}</div>
     ${d ? splitEditor(d, ...RCOLS) : ''}
     <div class="bar">
       ${d ? '<button type="button" class="btn ghost" data-split-end>分割をやめる</button>' : '<button type="button" class="btn ghost" data-split-start>分割</button>'}
@@ -1350,7 +1366,7 @@ async function saveRecent(form){
       if (!draft) {
         state.recentFrom = fullName(d.from);
         const e = form.elements;
-        e.desc.value = e.to.value = e.amt.value = ''; e.from.value = state.recentFrom;
+        e.desc.value = e.amt.value = ''; e.from.value = state.recentFrom; e.to.value = defaultAccountName('貸借不一致-JPY');
       }
       state.rnewVals = null;
     } else state.editing = null;
@@ -1398,13 +1414,13 @@ document.getElementById('tree').addEventListener('click', e => {
 });
 document.getElementById('treeQ').addEventListener('input', e => { state.treeQ = e.target.value; renderSidebar(); });
 
-/* 検索欄のクリア（× ボタン、または Esc キー）。input イベントを発生させて既存の絞り込み処理に任せる */
+/* 入力欄のクリア（× ボタン、または Esc キー）。input イベントを発生させて既存の処理に任せる */
 function clearSearch(input){
   if (!input.value) return false;
   input.value = '';
   input.dispatchEvent(new Event('input', {bubbles: true}));
-  // 取引一覧の検索欄は描き直されるので、新しい要素にフォーカスする
-  document.getElementById(input.id)?.focus();
+  // 検索欄（id 付き）は描き直されるので新しい要素を取り直す。出金元・入金先など id のない欄はそのままフォーカスする
+  (input.id ? document.getElementById(input.id) : input)?.focus();
   return true;
 }
 document.addEventListener('click', e => {
