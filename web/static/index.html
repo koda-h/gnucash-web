@@ -53,6 +53,9 @@ body{
   -webkit-font-smoothing:antialiased;
 }
 button,input{font:inherit;color:inherit}
+/* iOS Safari は入力欄の font-size が 16px 未満だとフォーカス時に自動でページをズームする。
+   その拡大・縮小の処理が端末やタイミングによっては固まることがある（scene-update watchdog）ため、16px 未満にならないようにする */
+input{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
 .app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh}
@@ -614,7 +617,42 @@ function renderMain(){
   const mL = all.filter(r => r.date.startsWith(month) && r.amt > 0).reduce((x, r) => x + r.amt, 0);
   const mR = all.filter(r => r.date.startsWith(month) && r.amt < 0).reduce((x, r) => x - r.amt, 0);
 
-  const from = {all:'', month: month + '-01', q3: shiftMonth(state.today, -3), year: state.today.slice(0,4) + '-01-01'}[state.period];
+  main.innerHTML = header + `
+    <div class="toolbar">
+      <div class="chips" role="tablist">
+        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年']].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
+      </div>
+      <label class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="regQ" placeholder="説明・勘定科目で絞り込み" value="${esc(state.q)}" autocomplete="off">
+        <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </label>
+      <span class="spacer"></span>
+      ${canWrite() ? `<button class="btn primary" data-new>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>取引を追加</button>` : ''}
+    </div>
+    <div class="card">
+      <div class="cols reg-head"><span>日付</span><span>説明</span><span>勘定科目</span><span class="r">${colL}</span><span class="r">${colR}</span><span class="r">残高</span></div>
+      <div class="scroll" id="scroll" data-account="${id}">${registerBody(id)}</div>
+      ${canWrite() ? composer(colL, colR, all.length ? all[all.length-1].bal : 0)
+        : `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため編集できません' : 'GnuCash デスクトップのロック中のため編集できません'}</div>`}
+    </div>`;
+
+  // 子科目がある場合、登録簿はこの科目自身の取引のみ（GnuCash と同じ）なので残高を分けて表示
+  const own = a.balance * sign(id);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="lbl">今月の${colL}</div><div class="val num">${money(mL, id)}</div></div>
+    <div class="stat"><div class="lbl">今月の${colR}</div><div class="val num">${money(mR, id)}</div></div>
+    ${CHILDREN[id] ? `<div class="stat"><div class="lbl">子科目を含む合計</div><div class="val num ${v<0?'neg':''}">${money(v, id)}</div></div>` : ''}
+    <div class="stat big"><div class="lbl">${CHILDREN[id] ? 'この科目の残高' : '残高'}</div><div class="val num ${own<0?'neg':''}">${money(own, id)}</div></div>`;
+}
+
+// 登録簿一覧部分の HTML だけを組み立てる（検索中の絞り込み更新でヘッダーごと作り直さずに済むように分離）
+function registerBody(id){
+  const a = A[id];
+  const [colL, colR] = T(a.type).cols;
+  const all = state.reg.rows;
+  const from = {all:'', month: state.today.slice(0, 7) + '-01', q3: shiftMonth(state.today, -3), year: state.today.slice(0,4) + '-01-01'}[state.period];
   const q = state.q.trim().toLowerCase();
   let rows = all.filter(r => (!from || r.date >= from) &&
     (!q || r.desc.toLowerCase().includes(q) || (r.num || '').toLowerCase().includes(q) || (r.other && fullName(r.other).toLowerCase().includes(q))));
@@ -635,35 +673,7 @@ function renderMain(){
     body += state.editing === r.guid ? editRow(r, colL, colR) : viewRow(r, id);
   }
   if (!rows.length) body = `<div class="empty">${all.length ? '条件に一致する取引がありません' : 'まだ取引がありません。'}</div>`;
-
-  main.innerHTML = header + `
-    <div class="toolbar">
-      <div class="chips" role="tablist">
-        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年']].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
-      </div>
-      <label class="search">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="regQ" placeholder="説明・勘定科目で絞り込み" value="${esc(state.q)}" autocomplete="off">
-        <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-      </label>
-      <span class="spacer"></span>
-      ${canWrite() ? `<button class="btn primary" data-new>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>取引を追加</button>` : ''}
-    </div>
-    <div class="card">
-      <div class="cols reg-head"><span>日付</span><span>説明</span><span>勘定科目</span><span class="r">${colL}</span><span class="r">${colR}</span><span class="r">残高</span></div>
-      <div class="scroll" id="scroll" data-account="${id}">${body}</div>
-      ${canWrite() ? composer(colL, colR, all.length ? all[all.length-1].bal : 0)
-        : `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため編集できません' : 'GnuCash デスクトップのロック中のため編集できません'}</div>`}
-    </div>`;
-
-  // 子科目がある場合、登録簿はこの科目自身の取引のみ（GnuCash と同じ）なので残高を分けて表示
-  const own = a.balance * sign(id);
-  document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="lbl">今月の${colL}</div><div class="val num">${money(mL, id)}</div></div>
-    <div class="stat"><div class="lbl">今月の${colR}</div><div class="val num">${money(mR, id)}</div></div>
-    ${CHILDREN[id] ? `<div class="stat"><div class="lbl">子科目を含む合計</div><div class="val num ${v<0?'neg':''}">${money(v, id)}</div></div>` : ''}
-    <div class="stat big"><div class="lbl">${CHILDREN[id] ? 'この科目の残高' : '残高'}</div><div class="val num ${own<0?'neg':''}">${money(own, id)}</div></div>`;
+  return body;
 }
 
 function viewRow(r, id){
@@ -917,6 +927,22 @@ function render({scrollBottom = false, anchor = null} = {}){
     || sc.querySelector('.flash, form.edit, form.redit');
   target?.scrollIntoView({block: 'nearest'});
   if (anchor) target?.focus({preventScroll: true});
+}
+// 検索欄の入力のたびに render() で #main ごと作り直すと、入力中の検索欄自体が作り直されてしまい、
+// モバイルの日本語入力（IME変換中）だとその瞬間に画面が無反応になることがあるため、
+// 一覧部分（#scroll）だけを差し替える。検索欄自身はフォーカスを保ったまま触らない
+function refilterList(){
+  const scroll = document.getElementById('scroll');
+  if (!scroll) return;
+  if (state.view === 'recent') {
+    if (!state.recent || state.recent.days !== state.recentDays) return;
+    scroll.innerHTML = recentBody();
+  } else {
+    if (!state.reg || state.reg.account !== state.selected) return;
+    scroll.innerHTML = registerBody(state.selected);
+  }
+  scroll.scrollTop = 0;
+  scroll.querySelectorAll('form[data-split]').forEach(updateSplitSummary);
 }
 function cancelEdit(){
   const guid = state.editing;
@@ -1215,6 +1241,19 @@ function renderRecent(){
     </div>`;
   if (!R || R.days !== days) { main.innerHTML = header + '<div class="loading">読み込み中…</div>'; return; }
 
+  main.innerHTML = header + `
+    <div class="card">
+      ${canWrite() ? recentComposer()
+        : `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため追加・編集できません' : 'GnuCash デスクトップのロック中のため追加・編集できません'}</div>`}
+      <div class="rgrid rhead"><span>入力</span><span>取引日</span><span>説明</span><span>出金元 → 入金先</span><span class="r">金額</span></div>
+      <div class="scroll" id="scroll" data-account="__recent">${recentBody()}</div>
+    </div>`;
+}
+
+// 最近の取引一覧部分の HTML だけを組み立てる（検索中の絞り込み更新でヘッダーごと作り直さずに済むように分離）
+function recentBody(){
+  const R = state.recent, days = state.recentDays;
+  const label = days === 1 ? '今日' : `過去 ${days} 日間`;
   const q = state.q.trim().toLowerCase();
   const rows = R.rows.filter(tx => !q || tx.desc.toLowerCase().includes(q)
     || tx.splits.some(s => fullName(s.account).toLowerCase().includes(q) || s.memo.toLowerCase().includes(q)));
@@ -1233,14 +1272,7 @@ function renderRecent(){
     body += state.editing === tx.guid ? recentEditRow(tx) : recentRow(tx);
   }
   if (!rows.length) body = `<div class="empty">${R.rows.length ? '条件に一致する取引がありません' : `${label}に登録した取引はありません`}</div>`;
-
-  main.innerHTML = header + `
-    <div class="card">
-      ${canWrite() ? recentComposer()
-        : `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため追加・編集できません' : 'GnuCash デスクトップのロック中のため追加・編集できません'}</div>`}
-      <div class="rgrid rhead"><span>入力</span><span>取引日</span><span>説明</span><span>出金元 → 入金先</span><span class="r">金額</span></div>
-      <div class="scroll" id="scroll" data-account="__recent">${body}</div>
-    </div>`;
+  return body;
 }
 
 async function openRecentEdit(guid){
@@ -1474,9 +1506,9 @@ main.addEventListener('reset', e => setTimeout(() => {
 }));
 main.addEventListener('input', e => {
   if (e.target.id === 'regQ') {
+    if (e.isComposing) return;   // IME変換中は確定するまで更新しない（変換中に検索欄を作り直すとハングすることがある）
     state.q = e.target.value; state.limit = PAGE;
-    const pos = e.target.selectionStart;
-    render({scrollBottom: true}); const q = document.getElementById('regQ'); q.focus(); q.setSelectionRange(pos, pos);
+    refilterList();
     return;
   }
   const f = e.target.closest('form'); if (!f) return;
