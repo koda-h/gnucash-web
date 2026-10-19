@@ -655,8 +655,9 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         p, qs = url.path, parse_qs(url.query)
         b = self.book
-        if method == "GET" and p in ("/", "/index.html"):
+        if method == "GET" and p in ("/", "/index.html", "/recent"):
             # 画面は誰でも読める（ログイン画面を含むため）。データはすべて API 側で保護する
+            # /recent は「最近の取引」画面を直接開くためのエントリーポイント（ホーム画面への追加用）
             return self._send(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
         if self.auth:
             authed = self.auth.is_authenticated(self.headers.get("Cookie"))

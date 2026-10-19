@@ -933,6 +933,10 @@ function renderLists(){
 // anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
 function render({scrollBottom = false, anchor = null} = {}){
   if (!state.book) return;
+  // 画面の種類に合わせて URL を同期する（最近の取引なら /recent、それ以外なら /）。
+  // 履歴を汚さないよう pushState ではなく replaceState を使う
+  const path = state.view === 'recent' ? '/recent' : '/';
+  if (location.pathname !== path) history.replaceState(null, '', path + location.search);
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
   const viewKey = state.view === 'recent' ? '__recent' : state.selected;
@@ -1747,6 +1751,8 @@ async function boot(){
     document.getElementById('tree').innerHTML = `<div class="empty">読み込みに失敗しました<br>${esc(e.message)}</div>`;
     return;
   }
+  // /recent で開いた場合は「最近の取引」画面を直接表示する（ホーム画面への追加用のエントリーポイント）
+  if (location.pathname === '/recent') return openRecent();
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
