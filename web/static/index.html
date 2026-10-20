@@ -128,7 +128,7 @@ mark{background:var(--flash);color:inherit;border-radius:2px}
 .chip.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow);font-weight:500}
 .toolbar .search{max-width:280px}
 .spacer{flex:1}
-.btn{height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface);padding:0 14px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px}
+.btn{height:34px;border-radius:8px;border:1px solid var(--border);background:var(--surface);padding:0 14px;cursor:pointer;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex-shrink:0}
 .btn:hover{background:var(--hover)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.primary:hover{filter:brightness(1.07)}
@@ -285,6 +285,8 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
   .edit .e-desc,.composer .e-desc,.edit .e-acct,.composer .e-acct{grid-column:1/-1}
   .bal-preview{display:none}
   .hint{display:none}
+  /* ボタンが収まりきらない時は折り返して縦書きになるのではなく、横にスクロールさせる */
+  .bar{overflow-x:auto}
   .sline-head,.s-idx{display:none}
   .split-view .sline{grid-template-columns:62px minmax(0,1fr) auto;padding-top:4px;padding-bottom:4px}
   .split-view .sline .s-memo{grid-area:2/2/3/3;font-size:12px}
@@ -885,7 +887,7 @@ function editRow(r, colL, colR){
       <span class="msg" data-msg>${d && !d.editable ? esc(d.reason) + '（日付と説明のみ編集できます）' : ''}</span>
       <span class="spacer"></span>
       <span class="hint"><kbd>Enter</kbd> 保存　<kbd>Esc</kbd> キャンセル</span>
-      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="button" class="btn ghost" data-cancel>取消</button>
       <button type="submit" class="btn primary">保存</button>
     </div>
   </form>`;
@@ -1256,7 +1258,7 @@ function recentEditRow(tx){
       <span class="msg" data-msg>${d && !d.editable ? esc(d.reason) + '（日付と説明のみ編集できます）' : ''}</span>
       <span class="spacer"></span>
       <span class="hint"><kbd>Enter</kbd> 保存　<kbd>Esc</kbd> キャンセル</span>
-      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="button" class="btn ghost" data-cancel>取消</button>
       <button type="submit" class="btn primary">保存</button>
     </div>
   </form>`;
@@ -1323,7 +1325,7 @@ async function openRecentEdit(guid){
   if (tx.splits.some(s => s.rec === 'y')) return toast('照合済みの取引は編集できません');
   if (state.editing && state.editing !== guid) delete state.drafts[state.editing];
   if (!pairOf(tx).simple) state.drafts[guid] = draftFromTx(tx);   // 分割取引は分割行の編集で開く
-  state.editing = guid; render();
+  state.editing = guid; state.recentComposerOpen = false; render();
   document.querySelector('form.redit [name=desc]')?.focus();
 }
 
