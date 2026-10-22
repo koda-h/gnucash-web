@@ -151,6 +151,12 @@ mark{background:var(--flash);color:inherit;border-radius:2px}
 .scroll{overflow:auto;flex:1;min-height:0}
 .month{position:sticky;top:0;z-index:1;background:var(--surface-2);font-size:12px;font-weight:600;color:var(--muted);padding:6px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
 .month .num{font-weight:500}
+/* 取引一覧の行を左にスワイプすると右側に削除ボタンが出る */
+.swipe{position:relative;overflow:hidden}
+.swipe-del{position:absolute;top:0;bottom:0;right:0;width:84px;border:0;background:var(--neg);color:#fff;
+  font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.swipe-content{position:relative;background:var(--surface);touch-action:pan-y}
+.swipe:not(.dragging) .swipe-content{transition:transform .18s ease}
 .row{min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
 .row:hover{background:var(--hover)}
 .row.flash{animation:flash 1.6s ease-out}
@@ -709,13 +715,16 @@ function viewRow(r, id){
     ? `<button type="button" class="pill split-toggle ${open?'open':''}" data-split-toggle="${r.guid}" aria-expanded="${open}" title="分割を${open?'閉じる':'表示'}">${chevron}分割取引</button>`
     : r.other ? `<span class="pill" title="${esc(fullName(r.other))}">${esc(path(r.other).slice(-2).join(' › '))}</span>` : '';
   const rec = r.rec === 'y' ? '<span class="rec" title="照合済">照合</span>' : r.rec === 'c' ? '<span class="rec c" title="確認済">確認</span>' : '';
-  return `<div class="cols row ${state.flash===r.guid?'flash':''}" data-edit="${r.guid}" tabindex="0">
-    <span class="c-date num">${fmtDate(r.date)}</span>
-    <span class="c-desc">${r.num ? `<span class="tnum">#${esc(r.num)}</span>` : ''}${r.desc ? esc(r.desc) : '<span class="ph">（説明なし）</span>'}${rec}</span>
-    <span class="c-acct">${acct}</span>
-    <span class="c-in r num ${r.amt > 0 ? eff : ''} ${gain}">${r.amt > 0 ? money(r.amt, id) : ''}</span>
-    <span class="c-out r num ${r.amt < 0 ? eff : ''}">${r.amt < 0 ? money(-r.amt, id) : ''}</span>
-    <span class="c-bal r num ${bal<0?'neg':''}">${money(bal, id)}</span>
+  return `<div class="swipe" data-swipe="${r.guid}">
+    <button type="button" class="swipe-del" data-swipe-del="${r.guid}">削除</button>
+    <div class="cols row swipe-content ${state.flash===r.guid?'flash':''}" data-edit="${r.guid}" tabindex="0">
+      <span class="c-date num">${fmtDate(r.date)}</span>
+      <span class="c-desc">${r.num ? `<span class="tnum">#${esc(r.num)}</span>` : ''}${r.desc ? esc(r.desc) : '<span class="ph">（説明なし）</span>'}${rec}</span>
+      <span class="c-acct">${acct}</span>
+      <span class="c-in r num ${r.amt > 0 ? eff : ''} ${gain}">${r.amt > 0 ? money(r.amt, id) : ''}</span>
+      <span class="c-out r num ${r.amt < 0 ? eff : ''}">${r.amt < 0 ? money(-r.amt, id) : ''}</span>
+      <span class="c-bal r num ${bal<0?'neg':''}">${money(bal, id)}</span>
+    </div>
   </div>${open ? splitView(state.txCache[r.guid]) : ''}`;
 }
 
@@ -991,6 +1000,59 @@ document.getElementById('suggestBox').addEventListener('mousedown', e => {
   pickSuggest([...item.parentElement.children].indexOf(item));
 });
 
+/* ---------- 取引一覧の行を左スワイプすると削除ボタンが出る ---------- */
+const SWIPE_REVEAL = 84;
+function closeSwipeEl(el){
+  el.classList.remove('open');
+  el.querySelector('.swipe-content').style.transform = '';
+}
+function closeAllSwipes(except){
+  document.querySelectorAll('.swipe.open').forEach(el => { if (el !== except) closeSwipeEl(el); });
+}
+let swipeTouch = null;
+document.addEventListener('touchstart', e => {
+  const el = e.target.closest('.swipe');
+  if (!el) { closeAllSwipes(); return; }
+  if (e.target.closest('[data-swipe-del]')) return;   // 削除ボタン自体はクリックに任せる
+  const t = e.touches[0];
+  const wasOpen = el.classList.contains('open');
+  if (!wasOpen) closeAllSwipes(el);
+  swipeTouch = {el, startX: t.clientX, startY: t.clientY, curX: wasOpen ? -SWIPE_REVEAL : 0, dragging: false, wasOpen};
+}, {passive: true});
+document.addEventListener('touchmove', e => {
+  if (!swipeTouch) return;
+  const t = e.touches[0];
+  const dx = t.clientX - swipeTouch.startX, dy = t.clientY - swipeTouch.startY;
+  if (!swipeTouch.dragging) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    if (Math.abs(dy) > Math.abs(dx)) { swipeTouch = null; return; }   // 縦スクロールとみなして諦める
+    swipeTouch.dragging = true;
+    swipeTouch.el.classList.add('dragging');
+  }
+  const base = swipeTouch.wasOpen ? -SWIPE_REVEAL : 0;
+  swipeTouch.curX = Math.max(-SWIPE_REVEAL, Math.min(0, base + dx));
+  swipeTouch.el.querySelector('.swipe-content').style.transform = `translateX(${swipeTouch.curX}px)`;
+  e.preventDefault();
+}, {passive: false});
+document.addEventListener('touchend', () => {
+  if (!swipeTouch) return;
+  const {el, dragging, curX} = swipeTouch;
+  el.classList.remove('dragging');
+  if (dragging) {
+    if (curX < -SWIPE_REVEAL / 2) { el.classList.add('open'); el.querySelector('.swipe-content').style.transform = `translateX(${-SWIPE_REVEAL}px)`; }
+    else closeSwipeEl(el);
+  }
+  swipeTouch = null;
+});
+document.addEventListener('click', e => {
+  const delBtn = e.target.closest('[data-swipe-del]');
+  if (delBtn) { del(delBtn.dataset.swipeDel); return; }
+  // 開いている状態で行自体をタップしたら、編集を開かずまず閉じるだけにする
+  const content = e.target.closest('.swipe-content');
+  const wrap = content?.closest('.swipe');
+  if (wrap?.classList.contains('open')) { closeSwipeEl(wrap); e.stopPropagation(); }
+}, true);
+
 // anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
 function render({scrollBottom = false, anchor = null} = {}){
   if (!state.book) return;
@@ -1244,12 +1306,15 @@ function recentRow(tx){
   const pastLabel = tx.date < enterDay ? '過去日付' : '未来日付';
   const [y, m, d] = tx.date.split('-');
   const rec = tx.splits.some(s => s.rec === 'y') ? recBadge('y') : tx.splits.some(s => s.rec === 'c') ? recBadge('c') : '';
-  return `<div class="rgrid rrow ${state.flash===tx.guid?'flash':''}" data-redit="${tx.guid}" tabindex="0">
-    <span class="r-t num">${(tx.enter || '').slice(11, 16)}</span>
-    <span class="r-pd num ${past?'past':''}" ${past ? `title="入力日 ${enterDay}"` : ''}>${past ? `<span class="past-tag">${pastLabel}</span>` : ''}${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span></span>
-    <span class="r-ds">${tx.num ? `<span class="tnum">#${esc(tx.num)}</span>` : ''}${tx.desc ? esc(tx.desc) : '<span class="ph">（説明なし）</span>'}${state.added.has(tx.guid) ? '<span class="badge-new">追加</span>' : ''}${rec}</span>
-    <span class="flow">${flow}</span>
-    <span class="r-amt r num">${money(p.amount, tx.currency)}</span>
+  return `<div class="swipe" data-swipe="${tx.guid}">
+    <button type="button" class="swipe-del" data-swipe-del="${tx.guid}">削除</button>
+    <div class="rgrid rrow swipe-content ${state.flash===tx.guid?'flash':''}" data-redit="${tx.guid}" tabindex="0">
+      <span class="r-t num">${(tx.enter || '').slice(11, 16)}</span>
+      <span class="r-pd num ${past?'past':''}" ${past ? `title="入力日 ${enterDay}"` : ''}>${past ? `<span class="past-tag">${pastLabel}</span>` : ''}${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span></span>
+      <span class="r-ds">${tx.num ? `<span class="tnum">#${esc(tx.num)}</span>` : ''}${tx.desc ? esc(tx.desc) : '<span class="ph">（説明なし）</span>'}${state.added.has(tx.guid) ? '<span class="badge-new">追加</span>' : ''}${rec}</span>
+      <span class="flow">${flow}</span>
+      <span class="r-amt r num">${money(p.amount, tx.currency)}</span>
+    </div>
   </div>${open ? recentSplitView(tx) : ''}`;
 }
 function recentSplitView(tx){
