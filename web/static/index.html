@@ -160,7 +160,9 @@ mark{background:var(--flash);color:inherit;border-radius:2px}
 .row{min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
 .row:hover{background:var(--hover)}
 .row.flash{animation:flash 1.6s ease-out}
-@keyframes flash{from{background:var(--flash)}to{background:transparent}}
+/* to を transparent にすると、スワイプ削除ボタンが背後にある行ではフェード中にそれが透けて見えるため、
+   通常の背景色（surface）へ戻す */
+@keyframes flash{from{background:var(--flash)}to{background:var(--surface)}}
 .c-date{color:var(--muted)}
 .c-date .wd{font-size:11px;margin-left:4px;color:var(--faint)}
 .c-desc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1014,7 +1016,7 @@ function closeAllSwipes(except){
 let swipeTouch = null;
 document.addEventListener('touchstart', e => {
   const el = e.target.closest('.swipe');
-  if (!el) { closeAllSwipes(); return; }
+  if (!el) { closeAllSwipes(); swipeTouch = null; return; }   // 関係ない場所（保存ボタンなど）に触れたら前のジェスチャーの残りも必ず捨てる
   if (e.target.closest('[data-swipe-del]')) return;   // 削除ボタン自体はクリックに任せる
   const t = e.touches[0];
   const wasOpen = el.classList.contains('open');
@@ -1046,6 +1048,14 @@ document.addEventListener('touchend', () => {
   }
   swipeTouch = null;
 });
+// タッチ中に要素が消える（編集・保存などで描き直される）と touchend ではなく touchcancel が来るので、
+// ここで捨てておかないと swipeTouch が残ったままになり、次の無関係なタップの touchend で誤動作する
+document.addEventListener('touchcancel', () => {
+  if (!swipeTouch) return;
+  swipeTouch.el.classList.remove('dragging');
+  closeSwipeEl(swipeTouch.el);
+  swipeTouch = null;
+});
 document.addEventListener('click', e => {
   const delBtn = e.target.closest('[data-swipe-del]');
   if (delBtn) { del(delBtn.dataset.swipeDel); return; }
@@ -1068,6 +1078,7 @@ function render({scrollBottom = false, anchor = null} = {}){
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   closeSuggest();   // #main を作り直すと候補ドロップダウンを出していた入力欄ごと消えるため閉じておく
+  swipeTouch = null;   // #main を作り直すとスワイプ中の行も消えるため、追跡中のジェスチャーを捨てる
   renderSidebar();
   renderMain();
   document.querySelectorAll('form[data-split]').forEach(updateSplitSummary);
