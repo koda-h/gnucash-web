@@ -450,6 +450,9 @@ const TYPES = {
 const T = type => TYPES[type] || {label:type, credit:false, cols:['増加','減少']};
 const SYMBOLS = {JPY:'¥', USD:'$', EUR:'€', GBP:'£', CNY:'元'};
 const PAGE = 300;
+// アプリが置かれているパス（ドメイン直下なら "/"、GitHub Pages なら "/gnucash-web/mock/" など）。
+// 末尾の "recent" やファイル名を取り除いて求める
+const BASE = location.pathname.replace(/\/recent\/?$/, '/').replace(/[^/]*$/, '');
 
 const state = {
   book: null,
@@ -1192,10 +1195,11 @@ function renderLists(){
 // anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
 function render({scrollBottom = false, anchor = null} = {}){
   if (!state.book) return;
-  // 画面の種類に合わせて URL を同期する（最近の取引なら /recent、それ以外なら /）。
+  // 画面の種類に合わせて URL を同期する（最近の取引なら BASE#recent、それ以外なら BASE）。
+  // 静的ホスティングでも再読み込みできるよう、パスではなくハッシュで切り替える。
   // 履歴を汚さないよう pushState ではなく replaceState を使う
-  const path = state.view === 'recent' ? '/recent' : '/';
-  if (location.pathname !== path) history.replaceState(null, '', path + location.search);
+  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : '');
+  if (location.pathname + location.search + location.hash !== url) history.replaceState(null, '', url);
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
   const viewKey = state.view === 'recent' ? '__recent' : state.selected;
@@ -2010,8 +2014,8 @@ async function boot(){
     document.getElementById('tree').innerHTML = `<div class="empty">読み込みに失敗しました<br>${esc(e.message)}</div>`;
     return;
   }
-  // /recent で開いた場合は「最近の取引」画面を直接表示する（ホーム画面への追加用のエントリーポイント）
-  if (location.pathname === '/recent') return openRecent();
+  // #recent（または旧形式の /recent）で開いた場合は「最近の取引」画面を直接表示する（ホーム画面への追加用のエントリーポイント）
+  if (location.hash === '#recent' || /\/recent\/?$/.test(location.pathname)) return openRecent();
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
