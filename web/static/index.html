@@ -921,7 +921,13 @@ const listsCache = {};
 function updateList(id, html){
   if (listsCache[id] === html) return;
   listsCache[id] = html;
-  document.getElementById(id).innerHTML = html;
+  // 保存直後は、この直後に説明欄へ focus() が呼ばれることがある（連続入力）。
+  // 候補一覧の書き換えとフォーカス移動が同じタイミングで重なるとiOSで固まることがあるため、
+  // 書き換え自体は次のフレームまで遅らせて重ならないようにする
+  requestAnimationFrame(() => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  });
 }
 function renderLists(){
   updateList('acctList', state.book.accounts
