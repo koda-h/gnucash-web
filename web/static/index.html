@@ -88,6 +88,12 @@ input{font-size:16px}
   padding:0;display:grid;place-items:center;cursor:pointer;background:var(--border-strong);color:var(--surface)}
 .fclear .clear:hover{background:var(--muted)}
 .fclear .f:placeholder-shown ~ .clear{display:none}
+/* 入力候補のドロップダウン（iOSのネイティブ datalist は scene-update のハングの原因になるため自前で描画する）。
+   position:fixed はiOSでキーボード表示中に基準がずれることがあるため、ページ基準の absolute にしている */
+.suggest-box{position:absolute;z-index:20;max-height:240px;overflow-y:auto;background:var(--surface);
+  border:1px solid var(--border-strong);border-radius:8px;box-shadow:var(--shadow-lg);padding:4px}
+.suggest-item{padding:7px 10px;border-radius:6px;cursor:pointer;font-size:13px;white-space:normal;word-break:break-all;line-height:1.4}
+.suggest-item.on{background:var(--accent-soft);color:var(--accent-text)}
 .icon-btn{height:34px;min-width:34px;border:1px solid var(--border);background:var(--surface);border-radius:8px;cursor:pointer;color:var(--muted);display:grid;place-items:center;padding:0 8px}
 .icon-btn:hover{background:var(--hover);color:var(--text)}
 .tree{flex:1;overflow:auto;padding:4px 8px 24px}
@@ -420,9 +426,7 @@ form.busy{opacity:.6;pointer-events:none}
   <main class="main" id="main"></main>
 </div>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo" hidden>元に戻す</button></div>
-<datalist id="acctList"></datalist>
-<datalist id="acctListAll"></datalist>
-<datalist id="descList"></datalist>
+<div class="suggest-box" id="suggestBox" hidden></div>
 <dialog class="keys" id="keysDialog"></dialog>
 
 
@@ -761,7 +765,7 @@ function splitEditor(d, colL, colR){
     ${d.lines.map((l, i) => `<div class="cols sline" data-line="${i}">
       <span class="s-idx">${i + 1}</span>
       <input class="f e-smemo" data-k="memo" value="${esc(l.memo)}" placeholder="メモ" aria-label="メモ" autocomplete="off">
-      <input class="f e-sacct" data-k="acct" value="${esc(l.acct)}" placeholder="勘定科目" aria-label="勘定科目" list="acctListAll" autocomplete="off">
+      <input class="f e-sacct" data-k="acct" value="${esc(l.acct)}" placeholder="勘定科目" aria-label="勘定科目" autocomplete="off" data-suggest="acctAll">
       <input class="f r num e-sl" data-k="l" value="${esc(l.l)}" placeholder="${colL}" aria-label="${colL}" inputmode="decimal" autocomplete="off">
       <input class="f r num e-sr" data-k="r" value="${esc(l.r)}" placeholder="${colR}" aria-label="${colR}" inputmode="decimal" autocomplete="off">
       <button type="button" class="icon-btn e-x" data-line-del="${i}" title="この行を削除" aria-label="この行を削除">
@@ -864,8 +868,8 @@ function readSplitForm(form, d){
 function fields(vals, colL, colR, multi){
   return `
     <input class="f e-date" type="date" name="date" value="${vals.date}" aria-label="日付" required>
-    <input class="f e-desc" name="desc" value="${esc(vals.desc)}" placeholder="説明" aria-label="説明" list="descList" autocomplete="off">
-    <input class="f e-acct" name="acct" value="${esc(multi ? '-- 分割取引 --' : vals.acct)}" placeholder="勘定科目（例: 費用:食費）" aria-label="勘定科目" list="acctList" autocomplete="off" ${multi?'disabled':''}>
+    <input class="f e-desc" name="desc" value="${esc(vals.desc)}" placeholder="説明" aria-label="説明" autocomplete="off" data-suggest="desc">
+    <input class="f e-acct" name="acct" value="${esc(multi ? '-- 分割取引 --' : vals.acct)}" placeholder="勘定科目（例: 費用:食費）" aria-label="勘定科目" autocomplete="off" ${multi?'disabled':''} data-suggest="acct">
     <input class="f r num e-l" name="l" value="${vals.l}" placeholder="${colL}" aria-label="${colL}" inputmode="decimal" autocomplete="off" ${multi?'disabled':''}>
     <input class="f r num e-r" name="r" value="${vals.r}" placeholder="${colR}" aria-label="${colR}" inputmode="decimal" autocomplete="off" ${multi?'disabled':''}>`;
 }
@@ -914,29 +918,78 @@ function composer(colL, colR, lastBal){
 }
 
 /* ---------- 補完リスト ---------- */
-// <datalist> はブラウザのネイティブな候補表示と結び付いているため、中身が変わっていないのに
-// innerHTML を毎回作り直すと（iOSでは特に）候補表示の更新が固まることがある。
-// 内容が実際に変わった時だけ書き換えるようにする
-const listsCache = {};
-function updateList(id, html){
-  if (listsCache[id] === html) return;
-  listsCache[id] = html;
-  // 保存直後は、この直後に説明欄へ focus() が呼ばれることがある（連続入力）。
-  // 候補一覧の書き換えとフォーカス移動が同じタイミングで重なるとiOSで固まることがあるため、
-  // 書き換え自体は次のフレームまで遅らせて重ならないようにする
-  requestAnimationFrame(() => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = html;
-  });
+// iOS の <datalist>（ネイティブ候補表示）は scene-update のハング（画面が完全に固まる不具合）の
+// 原因になることが実機検証で確認できたため使わない。かわりに普通のDOM要素で自前のドロップダウンを出す。
+// #suggestBox は #main の外（render() で作り直されない場所）に置いてあるので、
+// 候補の表示・更新のたびにネイティブUIや要素そのものを壊して作り直すことがなく、この種の不具合を構造的に避けられる。
+function suggestOptions(type){
+  if (type === 'desc') return state.book.descriptions;
+  if (type === 'acct') return state.book.accounts
+    .filter(a => !a.placeholder && (state.view !== 'account' || a.guid !== state.selected)).map(a => fullName(a.guid));
+  if (type === 'acctAll') return state.book.accounts.filter(a => !a.placeholder).map(a => fullName(a.guid));
+  return [];
 }
-function renderLists(){
-  updateList('acctList', state.book.accounts
-    .filter(a => !a.placeholder && (state.view !== 'account' || a.guid !== state.selected))
-    .map(a => `<option value="${esc(fullName(a.guid))}">`).join(''));
-  updateList('acctListAll', state.book.accounts
-    .filter(a => !a.placeholder).map(a => `<option value="${esc(fullName(a.guid))}">`).join(''));
-  updateList('descList', state.book.descriptions.map(d => `<option value="${esc(d)}">`).join(''));
+const suggest = {input: null, items: []};
+function closeSuggest(){
+  suggest.input = null; suggest.items = [];
+  document.getElementById('suggestBox').hidden = true;
 }
+function openSuggest(input){
+  const q = input.value.trim().toLowerCase();
+  const items = suggestOptions(input.dataset.suggest).filter(v => !q || v.toLowerCase().includes(q)).slice(0, 50);
+  if (!items.length) return closeSuggest();
+  suggest.input = input; suggest.items = items;
+  const box = document.getElementById('suggestBox');
+  box.innerHTML = items.map(v => `<div class="suggest-item">${esc(v)}</div>`).join('');
+  const r = input.getBoundingClientRect();
+  // position:absolute なのでページ基準（ビューポート基準の座標 + スクロール量）に変換する
+  box.style.left = (r.left + window.scrollX) + 'px';
+  box.style.top = (r.bottom + window.scrollY + 4) + 'px';
+  box.style.width = r.width + 'px';
+  box.hidden = false;
+}
+function suggestIndex(){ return [...document.getElementById('suggestBox').children].findIndex(el => el.classList.contains('on')); }
+function moveSuggest(delta){
+  if (!suggest.items.length) return;
+  const items = [...document.getElementById('suggestBox').children];
+  const i = (suggestIndex() + delta + items.length) % items.length;
+  items.forEach((el, j) => el.classList.toggle('on', j === i));
+  items[i].scrollIntoView({block: 'nearest'});
+}
+function pickSuggest(i){
+  const input = suggest.input, value = suggest.items[i];
+  if (!input || value == null) return;
+  closeSuggest();
+  input.value = value;
+  input.dispatchEvent(new Event('input', {bubbles: true}));
+  input.dispatchEvent(new Event('change', {bubbles: true}));
+  input.focus();
+}
+document.addEventListener('focusin', e => { if (e.target.matches?.('[data-suggest]')) openSuggest(e.target); });
+document.addEventListener('input', e => { if (e.target.matches?.('[data-suggest]')) openSuggest(e.target); });
+document.addEventListener('focusout', e => {
+  if (!e.target.matches?.('[data-suggest]')) return;
+  const target = e.target;
+  setTimeout(() => {
+    const a = document.activeElement;
+    // クリアボタンなどでフォーカスが一瞬外れてすぐ同じ欄に戻った場合は、その間に出した
+    // 候補一覧を閉じない（閉じる判定が後から実行され、再度開いた候補を消してしまうのを防ぐ）
+    if (a === target || document.getElementById('suggestBox').contains(a)) return;
+    closeSuggest();
+  }, 0);
+});
+document.addEventListener('keydown', e => {
+  if (!suggest.input || e.target !== suggest.input) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggest(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggest(-1); }
+  else if (e.key === 'Enter' && suggestIndex() >= 0) { e.preventDefault(); pickSuggest(suggestIndex()); }
+  else if (e.key === 'Escape') { closeSuggest(); }
+});
+document.getElementById('suggestBox').addEventListener('mousedown', e => {
+  const item = e.target.closest('.suggest-item'); if (!item) return;
+  e.preventDefault();   // blur（focusout）より先に発火させ、クリックでフォーカスが外れないようにする
+  pickSuggest([...item.parentElement.children].indexOf(item));
+});
 
 // anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
 function render({scrollBottom = false, anchor = null} = {}){
@@ -950,9 +1003,9 @@ function render({scrollBottom = false, anchor = null} = {}){
   const viewKey = state.view === 'recent' ? '__recent' : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
+  closeSuggest();   // #main を作り直すと候補ドロップダウンを出していた入力欄ごと消えるため閉じておく
   renderSidebar();
   renderMain();
-  renderLists();
   document.querySelectorAll('form[data-split]').forEach(updateSplitSummary);
   const sc = document.getElementById('scroll');
   if (!sc) return;
@@ -1212,14 +1265,14 @@ function pairFields(v){
   const dis = v.multi ? 'disabled' : '';
   return `
     <label class="fl c-date"><span>日付</span><input class="f" type="date" name="date" value="${v.date}" required></label>
-    <label class="fl c-desc"><span>説明</span><input class="f" name="desc" value="${esc(v.desc)}" placeholder="説明（過去の取引から補完）" list="descList" autocomplete="off"></label>
+    <label class="fl c-desc"><span>説明</span><input class="f" name="desc" value="${esc(v.desc)}" placeholder="説明（過去の取引から補完）" autocomplete="off" data-suggest="desc"></label>
     <label class="fl c-from"><span>出金元${v.keepNote ? '<span class="keep-note">追加後も残る</span>' : ''}</span>
-      <div class="fclear"><input class="f" name="from" value="${esc(v.from)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 負債:クレジットカード:…'}" list="acctList" autocomplete="off" ${dis}>
+      <div class="fclear"><input class="f" name="from" value="${esc(v.from)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 負債:クレジットカード:…'}" autocomplete="off" ${dis} data-suggest="acct">
       <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア" ${dis}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div></label>
     <button type="button" class="swap" data-swap title="出金元と入金先を入れ替え" aria-label="出金元と入金先を入れ替え" ${dis}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h12l-3-3M17 17H5l3 3"/></svg></button>
     <label class="fl c-to"><span>入金先</span>
-      <div class="fclear"><input class="f" name="to" value="${esc(v.to)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 費用:食費'}" list="acctList" autocomplete="off" ${dis}>
+      <div class="fclear"><input class="f" name="to" value="${esc(v.to)}" placeholder="${v.multi ? '-- 分割取引 --' : '例: 費用:食費'}" autocomplete="off" ${dis} data-suggest="acct">
       <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア" ${dis}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div></label>
     <label class="fl c-amt"><span>金額</span><input class="f r num" name="amt" value="${esc(v.amt)}" placeholder="0" inputmode="decimal" autocomplete="off" ${dis}></label>`;
 }
