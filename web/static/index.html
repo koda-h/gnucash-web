@@ -298,7 +298,9 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
   .bal-preview{display:none}
   .hint{display:none}
   /* ボタンが収まりきらない時は折り返して縦書きになるのではなく、横にスクロールさせる */
-  .bar{overflow-x:auto}
+  .bar{overflow-x:auto;gap:2px}
+  /* spacer が際限なく広がると「保存」が画面外まで押し出されるので、間隔を詰める */
+  .bar .spacer{flex:0 0 0;width:0}
   .sline-head,.s-idx{display:none}
   .split-view .sline{grid-template-columns:62px minmax(0,1fr) auto;padding-top:4px;padding-bottom:4px}
   .split-view .sline .s-memo{grid-area:2/2/3/3;font-size:12px}
