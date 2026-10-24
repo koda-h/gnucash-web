@@ -294,15 +294,17 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
   .row .c-bal{grid-area:2/3/3/4;font-size:12px;color:var(--muted);font-weight:400}
   .row .c-bal.neg{color:var(--neg)}
   .month{padding:6px 16px}
-  .edit.cols,.composer.cols{grid-template-columns:1fr 1fr;gap:8px}
+  .edit.cols,.composer.cols{grid-template-columns:1fr 1fr;gap:14px}
   .edit .e-date,.composer .e-date{grid-column:1/-1}
   .edit .e-desc,.composer .e-desc,.edit .e-acct,.composer .e-acct{grid-column:1/-1}
+  .edit{padding-top:10px;padding-bottom:10px}
   .bal-preview{display:none}
   .hint{display:none}
-  /* ボタンが収まりきらない時は折り返して縦書きになるのではなく、横にスクロールさせる */
+  /* ボタンが収まりきらない時は折り返して縦書きになるのではなく、横にスクロールさせる。
+     gap を詰め、ボタンの左右余白も少し減らしておくと、画面が狭いときも
+     spacer が自然に縮んで「保存」がスクロールなしで収まりやすい */
   .bar{overflow-x:auto;gap:2px}
-  /* spacer が際限なく広がると「保存」が画面外まで押し出されるので、間隔を詰める */
-  .bar .spacer{flex:0 0 0;width:0}
+  .bar .btn{padding:0 10px}
   .sline-head,.s-idx{display:none}
   .split-view .sline{grid-template-columns:62px minmax(0,1fr) auto;padding-top:4px;padding-bottom:4px}
   .split-view .sline .s-memo{grid-area:2/2/3/3;font-size:12px}
@@ -1660,7 +1662,7 @@ async function openEdit(guid){
     try { state.drafts[guid] = draftFromTx(await ensureTx(guid)); } catch (e) { return toast(e.message); }
   }
   if (state.editing && state.editing !== guid) delete state.drafts[state.editing];
-  state.editing = guid; render();
+  state.editing = guid; state.composerOpen = false; render();
   document.querySelector('form.edit [name=desc]')?.focus();
 }
 async function toggleSplit(guid){
