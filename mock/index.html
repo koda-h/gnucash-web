@@ -102,10 +102,16 @@ input{font-size:16px}
 .chev svg{transition:transform .15s}
 .chev.open svg{transform:rotate(90deg)}
 .chev-sp{width:20px;flex:none}
-.tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tname-wrap{flex:1;min-width:0;display:flex;align-items:center;gap:4px}
+.tname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trow.ph .tname{font-weight:500}
 .tbal{color:var(--muted);font-size:13px}
 .tbal.neg{color:var(--neg)}
+/* 勘定科目の編集ボタン（鉛筆アイコン）。一覧の行・科目名見出し・詳細画面のタイトル横に出す */
+.tedit{width:20px;height:20px;flex:none;border:0;background:none;padding:0;cursor:pointer;color:var(--faint);display:grid;place-items:center;border-radius:4px}
+.tedit:hover{color:var(--text);background:var(--surface-2)}
+.trow.sel .tedit{color:var(--accent-text)}
+.htedit{width:24px;height:24px;vertical-align:middle;margin-left:2px}
 mark{background:var(--flash);color:inherit;border-radius:2px}
 
 /* ---------- Main ---------- */
@@ -213,6 +219,20 @@ dialog.keys::backdrop{background:rgba(0,0,0,.5)}
 .keys-add .row2{display:flex;gap:8px}
 .keys-add .f{flex:1}
 .keys-add .hint{display:block;margin-top:8px}
+
+/* 勘定科目の追加・編集ダイアログ */
+dialog.acct{width:min(440px, calc(100vw - 32px))}
+.acct-body{padding:16px 20px 4px;max-height:min(520px, 70vh);overflow:auto}
+.acct-field{margin-bottom:14px}
+.acct-field label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+.acct-field .f{width:100%}
+.acct-row2{display:flex;gap:10px}
+.acct-row2 .acct-field{flex:1;min-width:0}
+.acct-check{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.5;margin-bottom:12px;cursor:pointer}
+.acct-check input{width:16px;height:16px;margin-top:2px;flex:none}
+.acct-check.is-disabled{color:var(--faint);cursor:default}
+.acct-msg{font-size:12.5px;color:var(--neg);min-height:18px;margin-top:2px}
+.acct-bar{display:flex;align-items:center;gap:8px;padding:14px 20px 18px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
 
 /* 最近の取引 */
 .nav-recent{margin:0 8px 10px;width:calc(100% - 16px);display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:0;border-radius:9px;
@@ -410,6 +430,9 @@ form.busy{opacity:.6;pointer-events:none}
       <button class="icon-btn" id="toggleAll" title="すべて展開／折りたたみ">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
       </button>
+      <button class="icon-btn" id="newAcctBtn" title="新しい勘定科目" aria-label="新しい勘定科目">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
     </div>
     <nav class="tree" id="tree" role="tree"></nav>
     <div class="side-foot" id="sideFoot" hidden>
@@ -424,6 +447,7 @@ form.busy{opacity:.6;pointer-events:none}
 <datalist id="acctListAll"></datalist>
 <datalist id="descList"></datalist>
 <dialog class="keys" id="keysDialog"></dialog>
+<dialog class="keys acct" id="acctDialog"></dialog>
 
 
 <script>
@@ -510,7 +534,7 @@ const MOCK = (() => {
   };
   const acc = (guid, name, type, parent, placeholder) =>
     ({guid, name, type, parent, placeholder: !!placeholder, hidden: false, description: '', code: '', commodity: JPY});
-  const ACCOUNTS = [
+  const SEED_ACCOUNTS = [
     acc(g.asset, '資産', 'ASSET', null, true),
     acc(g.liquid, '流動資産', 'ASSET', g.asset, true),
     acc(g.cash, '現金', 'CASH', g.liquid),
@@ -528,7 +552,13 @@ const MOCK = (() => {
     acc(g.unknown, '不明-JPY', 'EQUITY', null),
     acc(g.imbalance, '貸借不一致-JPY', 'EQUITY', null),
   ];
-  const byGuid = Object.fromEntries(ACCOUNTS.map(a => [a.guid, a]));
+  const ACCOUNTS_KEY = 'gnucash-mock-accounts-v1';
+  function loadAccounts(){ try { const s = localStorage.getItem(ACCOUNTS_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+  function persistAccounts(){ try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(ACCOUNTS)); } catch (e) {} }
+  let ACCOUNTS = loadAccounts() ?? SEED_ACCOUNTS;
+  let byGuid = {};
+  function reindexAccounts(){ byGuid = Object.fromEntries(ACCOUNTS.map(a => [a.guid, a])); }
+  reindexAccounts();
 
   // ---- 取引の初期データ（amt: 2行の場合の [科目, 金額] の配列。符号は複式簿記の記録どおり） ----
   function mkTx(enter, date, desc, lines, opts = {}){
@@ -583,6 +613,22 @@ const MOCK = (() => {
     };
   }
 
+  // web/server.py の book() と同じ並び順にする（科目追加の位置確認用）：
+  // 親ごとに code→name でソートし、最上位だけは資産→負債→収益→費用→純資産の順
+  const TYPE_ORDER = ['ASSET', 'BANK', 'CASH', 'STOCK', 'MUTUAL', 'RECEIVABLE', 'LIABILITY', 'CREDIT', 'PAYABLE', 'INCOME', 'EXPENSE', 'EQUITY'];
+  function sortedAccounts(){
+    const byParent = {};
+    for (const a of ACCOUNTS) (byParent[a.parent || ''] ||= []).push(a);
+    for (const kids of Object.values(byParent)) kids.sort((a, b) => (a.code || '').localeCompare(b.code || '') || a.name.localeCompare(b.name, 'ja'));
+    (byParent[''] || []).sort((a, b) => {
+      const ia = TYPE_ORDER.indexOf(a.type), ib = TYPE_ORDER.indexOf(b.type);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || (a.code || '').localeCompare(b.code || '') || a.name.localeCompare(b.name, 'ja');
+    });
+    const out = [];
+    const walk = parent => { for (const a of (byParent[parent || ''] || [])) { out.push(a); walk(a.guid); } };
+    walk('');
+    return out;
+  }
   function book(){
     const own = {}, count = {};
     for (const t of TX) for (const s of t.splits) { own[s.account] = (own[s.account] || 0) + s.value; count[s.account] = (count[s.account] || 0) + 1; }
@@ -593,7 +639,7 @@ const MOCK = (() => {
     }
     return {
       file: 'mock.gnucash', readOnly: false, locked: [], writeBlocked: false, currency: 'JPY',
-      accounts: ACCOUNTS.map(a => ({...a, balance: own[a.guid] || 0, count: count[a.guid] || 0})),
+      accounts: sortedAccounts().map(a => ({...a, balance: own[a.guid] || 0, count: count[a.guid] || 0})),
       descriptions: descs.slice(0, 1000), today: iso(new Date()),
     };
   }
@@ -642,6 +688,62 @@ const MOCK = (() => {
   }
 
   function checkAccount(guid){ const a = byGuid[guid]; if (!a) err(404, '勘定科目が見つかりません'); return a; }
+
+  /* ---------- 勘定科目の追加・更新・削除 ---------- */
+  function childrenOf(guid){ return ACCOUNTS.filter(a => a.parent === guid); }
+  function splitCountOf(guid){ return TX.reduce((n, t) => n + t.splits.filter(s => s.account === guid).length, 0); }
+  function descendantGuidsOf(guid){
+    const out = new Set([guid]);
+    let grew = true;
+    while (grew) { grew = false; for (const a of ACCOUNTS) if (out.has(a.parent) && !out.has(a.guid)) { out.add(a.guid); grew = true; } }
+    return out;
+  }
+  const FRACTION_OF = {JPY: 1};   // 円以外は小数2桁（100分の1）を既定とする
+  function validateAccountBody(body, existingGuid){
+    const name = String(body.name || '').trim();
+    if (!name) err(400, '科目名を入力してください');
+    if (!TYPES[body.type]) err(400, '種類が正しくありません');
+    let parent = null;
+    if (body.parent) {
+      parent = byGuid[body.parent];
+      if (!parent) err(400, '親科目が見つかりません');
+      if (existingGuid && descendantGuidsOf(existingGuid).has(body.parent)) err(400, '自分自身、またはその子科目を親には選べません');
+    }
+    const mnemonic = String(body.commodity || 'JPY').toUpperCase();
+    if (!['JPY', 'USD', 'EUR', 'GBP', 'CNY'].includes(mnemonic)) err(400, '通貨が正しくありません');
+    return {name, type: body.type, parent: parent ? parent.guid : null, mnemonic,
+            placeholder: !!body.placeholder, hidden: !!body.hidden,
+            code: String(body.code || '').trim(), description: String(body.description || '').trim()};
+  }
+  function createAccount(body){
+    const v = validateAccountBody(body, null);
+    const guid = newGuid();
+    const a = {guid, name: v.name, type: v.type, parent: v.parent, placeholder: v.placeholder, hidden: v.hidden,
+               description: v.description, code: v.code, commodity: {mnemonic: v.mnemonic, fraction: FRACTION_OF[v.mnemonic] || 100, isCurrency: true}};
+    ACCOUNTS.push(a); reindexAccounts(); persistAccounts();
+    return {guid};
+  }
+  function updateAccount(guid, body){
+    const a = checkAccount(guid);
+    const v = validateAccountBody(body, guid);
+    const hasTx = splitCountOf(guid) > 0;
+    if (hasTx && v.mnemonic !== a.commodity.mnemonic) err(400, '取引がある科目は通貨を変更できません');
+    if (hasTx && v.placeholder) err(400, '取引がある科目は集計用にできません');
+    a.name = v.name; a.type = v.type; a.parent = v.parent; a.placeholder = v.placeholder; a.hidden = v.hidden;
+    a.description = v.description; a.code = v.code;
+    a.commodity = {mnemonic: v.mnemonic, fraction: FRACTION_OF[v.mnemonic] || a.commodity.fraction || 100, isCurrency: true};
+    reindexAccounts(); persistAccounts();
+    return {guid};
+  }
+  function deleteAccount(guid){
+    checkAccount(guid);
+    if (childrenOf(guid).length) err(400, '子科目があるため削除できません。先に子科目を削除するか、別の親に移動してください');
+    if (splitCountOf(guid) > 0) err(400, '取引が残っているため削除できません。先に取引を削除するか、別の科目に移動してください');
+    ACCOUNTS = ACCOUNTS.filter(a => a.guid !== guid);
+    reindexAccounts(); persistAccounts();
+    return {guid};
+  }
+
   function validateSplits(lines){
     if (!Array.isArray(lines) || lines.length < 2) err(400, '分割は2行以上必要です');
     const accts = lines.map(l => checkAccount(l.account));
@@ -715,7 +817,8 @@ const MOCK = (() => {
     return {guid: snapshot.guid};
   }
 
-  return {book, register, recent, quickfill, quickfillPair, create, update, copy, del, restore, txPayload, findTx};
+  return {book, register, recent, quickfill, quickfillPair, create, update, copy, del, restore, txPayload, findTx,
+           createAccount, updateAccount, deleteAccount};
 })();
 
 /* ---------- API（疑似バックエンド呼び出し） ---------- */
@@ -728,6 +831,10 @@ async function api(method, url, body){
     if (method === 'GET' && path === '/api/book') return MOCK.book();
     let m = path.match(/^\/api\/accounts\/([0-9a-f]+)\/register$/);
     if (method === 'GET' && m) return MOCK.register(m[1]);
+    if (method === 'POST' && path === '/api/accounts') return MOCK.createAccount(body);
+    m = path.match(/^\/api\/accounts\/([0-9a-f]+)$/);
+    if (m && method === 'PUT') return MOCK.updateAccount(m[1], body);
+    if (m && method === 'DELETE') return MOCK.deleteAccount(m[1]);
     if (method === 'GET' && path === '/api/quickfill') {
       const account = q.get('account'), desc = q.get('desc') || '';
       return account ? MOCK.quickfill(account, desc) : MOCK.quickfillPair(desc);
@@ -792,6 +899,7 @@ const WD = ['日','月','火','水','木','金','土'];
 const fmtDate = iso => { const [y,m,d] = iso.split('-'); return `${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span>`; };
 const hl = (text, q) => { if (!q) return esc(text); const i = text.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(text) : esc(text.slice(0,i)) + '<mark>' + esc(text.slice(i, i+q.length)) + '</mark>' + esc(text.slice(i+q.length)); };
 const chevron = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 6 6 6-6 6"/></svg>';
+const pencilIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 function parseAmt(s){
   const v = String(s).replace(/[,，¥\s円]/g, '').replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
   if (v === '') return 0;
@@ -840,7 +948,10 @@ function renderSidebar(){
     return `<div role="treeitem" aria-expanded="${kids.length ? open : ''}">
       <div class="trow ${state.view==='account' && state.selected===id?'sel':''} ${a.placeholder?'ph':''} ${a.hidden?'hidden-acct':''}" data-id="${id}" style="--d:${depth}" title="${esc(a.description)}">
         ${kids.length ? `<button class="chev ${open?'open':''}" data-toggle="${id}" aria-label="展開">${chevron}</button>` : '<span class="chev-sp"></span>'}
-        <span class="tname">${hl(a.name, q)}</span>
+        <span class="tname-wrap">
+          <span class="tname">${hl(a.name, q)}</span>
+          <button type="button" class="tedit" data-acct-edit="${id}" title="編集" aria-label="「${esc(a.name)}」を編集">${pencilIcon}</button>
+        </span>
         <span class="tbal num ${v<0?'neg':''}">${money(v, id)}</span>
       </div>
       ${kids.length && open ? `<div role="group">${kids.map(c => node(c, depth+1)).join('')}</div>` : ''}
@@ -848,7 +959,13 @@ function renderSidebar(){
   };
   document.getElementById('tree').innerHTML = ROOTS.map(r => {
     if (q && !matches(r)) return '';
-    return `<div class="group-h"><span class="trow-h" data-id="${r}" style="cursor:pointer">${esc(A[r].name)}</span><span class="num">${money(TOTAL[r]*sign(r), r)}</span></div>`
+    return `<div class="group-h">
+      <span style="display:flex;align-items:center;gap:4px;min-width:0">
+        <span class="trow-h" data-id="${r}" style="cursor:pointer">${esc(A[r].name)}</span>
+        <button type="button" class="tedit" data-acct-edit="${r}" title="編集" aria-label="「${esc(A[r].name)}」を編集">${pencilIcon}</button>
+      </span>
+      <span class="num">${money(TOTAL[r]*sign(r), r)}</span>
+    </div>`
       + (CHILDREN[r] || []).map(c => node(c, 0)).join('');
   }).join('') || '<div class="empty">該当する勘定科目がありません</div>';
 }
@@ -867,7 +984,9 @@ function renderMain(){
       <div>
         <button class="back" data-back>‹ 勘定科目一覧</button>
         <div class="crumbs">${ids.map(p => `<button data-go="${p}">${esc(A[p].name)}</button><span>›</span>`).join('')}</div>
-        <h1 class="title">${esc(a.name)} <span class="badge">${T(a.type).label}${a.placeholder?'・集計用':''}${a.commodity.mnemonic !== state.book.currency ? '・' + esc(a.commodity.mnemonic) : ''}</span></h1>
+        <h1 class="title">${esc(a.name)} <span class="badge">${T(a.type).label}${a.placeholder?'・集計用':''}${a.commodity.mnemonic !== state.book.currency ? '・' + esc(a.commodity.mnemonic) : ''}</span>
+          <button type="button" class="tedit htedit" data-acct-edit="${id}" title="編集" aria-label="「${esc(a.name)}」を編集">${pencilIcon}</button>
+        </h1>
         ${a.description ? `<div class="desc">${esc(a.description)}</div>` : ''}
       </div>
       <div class="stats" id="stats"></div>
@@ -1199,7 +1318,11 @@ function render({scrollBottom = false, anchor = null} = {}){
   // 静的ホスティングでも再読み込みできるよう、パスではなくハッシュで切り替える。
   // 履歴を汚さないよう pushState ではなく replaceState を使う
   const url = BASE + location.search + (state.view === 'recent' ? '#recent' : '');
-  if (location.pathname + location.search + location.hash !== url) history.replaceState(null, '', url);
+  // file:// や data: で開くとドキュメントの origin が null になり replaceState が
+  // SecurityError を投げることがある。URL同期に失敗しても描画自体は続行する
+  if (location.pathname + location.search + location.hash !== url) {
+    try { history.replaceState(null, '', url); } catch {}
+  }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
   const viewKey = state.view === 'recent' ? '__recent' : state.selected;
@@ -1682,12 +1805,131 @@ async function select(id){
   }
 }
 
+/* ---------- 勘定科目の追加・編集・削除 ---------- */
+let acctEditGuid = null;   // null = 新規作成、GUID = その科目を編集中
+// 親科目の選択肢（自分自身・その子孫は除く。深さをインデントで表す）
+function accountParentOptions(excludeIds){
+  const out = [];
+  const walk = (id, depth) => {
+    if (excludeIds.has(id)) return;
+    out.push({id, depth});
+    (CHILDREN[id] || []).forEach(c => walk(c, depth + 1));
+  };
+  ROOTS.forEach(r => walk(r, 0));
+  return out;
+}
+function descendantGuidsOf(id){
+  const out = new Set([id]);
+  (CHILDREN[id] || []).forEach(c => descendantGuidsOf(c).forEach(x => out.add(x)));
+  return out;
+}
+function openAccountDialog(guid = null, parentHint = null){
+  acctEditGuid = guid || null;
+  const draft = guid ? {...A[guid]} : {
+    name: '', type: (parentHint && A[parentHint]?.type) || 'EXPENSE', parent: parentHint || null,
+    commodity: (parentHint && A[parentHint]?.commodity) || {mnemonic: state.book.currency, fraction: 1},
+    placeholder: false, hidden: false, description: '', code: '',
+  };
+  renderAccountDialog(draft);
+  const d = document.getElementById('acctDialog');
+  d.showModal();
+  d.querySelector('[name=name]')?.focus();
+}
+function renderAccountDialog(draft, message = ''){
+  const d = document.getElementById('acctDialog');
+  const editing = !!acctEditGuid;
+  const exclude = editing ? descendantGuidsOf(acctEditGuid) : new Set();
+  const opts = accountParentOptions(exclude);
+  const hasKids = editing && (CHILDREN[acctEditGuid] || []).length > 0;
+  const hasTx = editing && A[acctEditGuid].count > 0;
+  const blockReason = hasKids ? '子科目があるため削除できません' : hasTx ? '取引が残っているため削除できません' : '';
+  d.innerHTML = `
+    <div class="keys-h"><h2>${editing ? '勘定科目を編集' : '勘定科目を追加'}</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
+    <form class="acct-body" data-acct-form>
+      <div class="acct-field"><label for="acctName">科目名</label><input class="f" id="acctName" name="name" value="${esc(draft.name)}" maxlength="200" autocomplete="off" required></div>
+      <div class="acct-row2">
+        <div class="acct-field"><label for="acctType">種類</label><select class="f" id="acctType" name="type">
+          ${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${draft.type === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
+        </select></div>
+        <div class="acct-field"><label for="acctCur">通貨</label><select class="f" id="acctCur" name="mnemonic" ${hasTx ? 'disabled' : ''} title="${hasTx ? '取引がある科目は通貨を変更できません' : ''}">
+          ${Object.keys(SYMBOLS).map(m => `<option value="${m}" ${draft.commodity.mnemonic === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="acct-field"><label for="acctParent">親科目</label><select class="f" id="acctParent" name="parent">
+        <option value="" ${!draft.parent ? 'selected' : ''}>（最上位）</option>
+        ${opts.map(o => `<option value="${o.id}" ${draft.parent === o.id ? 'selected' : ''}>${'　'.repeat(o.depth)}${esc(A[o.id].name)}</option>`).join('')}
+      </select></div>
+      <label class="acct-check ${hasTx ? 'is-disabled' : ''}"><input type="checkbox" name="placeholder" ${draft.placeholder ? 'checked' : ''} ${hasTx ? 'disabled' : ''}>
+        この科目には取引を記録しない（集計専用・子科目をまとめる）${hasTx ? '　※取引があるため変更できません' : ''}</label>
+      <label class="acct-check"><input type="checkbox" name="hidden" ${draft.hidden ? 'checked' : ''}> 科目一覧に表示しない</label>
+      <div class="acct-row2">
+        <div class="acct-field"><label for="acctCode">コード（任意）</label><input class="f" id="acctCode" name="code" value="${esc(draft.code || '')}" maxlength="40" autocomplete="off"></div>
+        <div class="acct-field"><label for="acctDesc">説明（任意）</label><input class="f" id="acctDesc" name="description" value="${esc(draft.description || '')}" maxlength="500" autocomplete="off"></div>
+      </div>
+      <div class="acct-msg" data-msg>${esc(message)}</div>
+      <div class="acct-bar">
+        ${editing ? `<button type="button" class="btn ghost" data-acct-add-child>＋ 子科目を追加</button>` : ''}
+        <span class="spacer"></span>
+        ${editing ? `<button type="button" class="btn danger" data-acct-del ${blockReason ? 'disabled' : ''} title="${blockReason}">削除</button>` : ''}
+        <button type="button" class="btn ghost" data-close>キャンセル</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>`;
+}
+async function deleteAccountFromDialog(){
+  const guid = acctEditGuid; if (!guid) return;
+  if (!confirm(`勘定科目「${A[guid].name}」を削除しますか？この操作は取り消せません。`)) return;
+  try {
+    await api('DELETE', `/api/accounts/${guid}`);
+    document.getElementById('acctDialog').close();
+    if (state.selected === guid) { state.selected = null; state.view = 'account'; }
+    await loadBook();
+    render();
+  } catch (e) {
+    document.getElementById('acctDialog').querySelector('[data-msg]').textContent = e.message;
+  }
+}
+document.getElementById('acctDialog').addEventListener('click', e => {
+  const d = document.getElementById('acctDialog');
+  if (e.target.closest('[data-close]') || e.target === d) return d.close();
+  if (e.target.closest('[data-acct-del]')) return deleteAccountFromDialog();
+  if (e.target.closest('[data-acct-add-child]')) { const parent = acctEditGuid; d.close(); openAccountDialog(null, parent); return; }
+});
+document.getElementById('acctDialog').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button[type=submit]');
+  const name = f.elements.name.value.trim();
+  if (!name) { f.querySelector('[data-msg]').textContent = '科目名を入力してください'; f.elements.name.focus(); return; }
+  const body = {
+    name, type: f.elements.type.value, parent: f.elements.parent.value || null,
+    commodity: f.elements.mnemonic.value,
+    placeholder: f.elements.placeholder.checked, hidden: f.elements.hidden.checked,
+    code: f.elements.code.value.trim(), description: f.elements.description.value.trim(),
+  };
+  btn.disabled = true;
+  try {
+    const res = acctEditGuid ? await api('PUT', `/api/accounts/${acctEditGuid}`, body) : await api('POST', '/api/accounts', body);
+    document.getElementById('acctDialog').close();
+    const newGuidOrSelf = res.guid || acctEditGuid;
+    await loadBook();
+    for (let a = A[body.parent]; a; a = A[a.parent]) state.expanded.add(a.guid);   // 親が畳まれていても新しい科目が見えるようにする
+    if (state.view === 'account' && state.selected === newGuidOrSelf) { state.reg = null; await loadRegister(newGuidOrSelf); }
+    render();
+  } catch (e) {
+    f.querySelector('[data-msg]').textContent = e.message;
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('tree').addEventListener('click', e => {
+  const edit = e.target.closest('[data-acct-edit]');
+  if (edit) { openAccountDialog(edit.dataset.acctEdit); return; }
   const tg = e.target.closest('[data-toggle]');
   if (tg) { const id = tg.dataset.toggle; state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); renderSidebar(); return; }
   const row = e.target.closest('[data-id]');
   if (row) select(row.dataset.id);
 });
+document.getElementById('newAcctBtn').onclick = () => openAccountDialog(null, null);
 document.getElementById('treeQ').addEventListener('input', e => { state.treeQ = e.target.value; renderSidebar(); });
 
 /* 入力欄のクリア（× ボタン、または Esc キー）。input イベントを発生させて既存の処理に任せる */
@@ -1716,6 +1958,8 @@ document.getElementById('toggleAll').onclick = () => {
 const main = document.getElementById('main');
 main.addEventListener('click', e => {
   const t = e.target;
+  const edit = t.closest('[data-acct-edit]');
+  if (edit) { openAccountDialog(edit.dataset.acctEdit); return; }
   if (t.closest('[data-back]')) { app.classList.remove('show-main'); return; }
   const go = t.closest('[data-go]'); if (go) return select(go.dataset.go);
   const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; state.limit = PAGE; render({scrollBottom: true}); return; }

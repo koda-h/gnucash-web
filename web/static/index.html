@@ -298,6 +298,7 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
   .edit .e-date,.composer .e-date{grid-column:1/-1}
   .edit .e-desc,.composer .e-desc,.edit .e-acct,.composer .e-acct{grid-column:1/-1}
   .edit{padding-top:10px;padding-bottom:10px}
+  .composer{padding-top:12px;padding-bottom:12px}
   .bal-preview{display:none}
   .hint{display:none}
   /* ボタンが収まりきらない時は折り返して縦書きになるのではなく、横にスクロールさせる。
@@ -1603,6 +1604,7 @@ main.addEventListener('click', e => {
   }
   if (t.closest('[data-new]') || t.closest('[data-open-composer]')) {
     state.composerOpen = true;
+    if (state.editing) { delete state.drafts[state.editing]; state.editing = null; render(); }
     const c = document.querySelector('form.composer'); c?.classList.add('open');
     c?.querySelector('[name=desc]')?.focus({preventScroll: true});
     const sc = document.getElementById('scroll'); if (sc) sc.scrollTop = sc.scrollHeight;
@@ -1610,7 +1612,8 @@ main.addEventListener('click', e => {
   }
   if (t.closest('[data-toggle-rcomposer]')) {
     state.recentComposerOpen = !state.recentComposerOpen;
-    const c = t.closest('form');
+    if (state.recentComposerOpen && state.editing) { delete state.drafts[state.editing]; state.editing = null; render(); }
+    const c = document.querySelector('form[data-form="rnew"]');
     c?.classList.toggle('open', state.recentComposerOpen);
     if (state.recentComposerOpen) c?.querySelector('[name=desc]')?.focus({preventScroll: true});
     return;
