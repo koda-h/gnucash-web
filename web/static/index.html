@@ -1154,13 +1154,21 @@ document.addEventListener('click', e => {
   if (wrap?.classList.contains('open')) { closeSwipeEl(wrap); e.stopPropagation(); }
 }, true);
 
+// 戻る/進む（popstate）に反応して描き直すときは、ブラウザ側が既に URL を変えているので
+// 履歴をさらに書き換えない（pushState/replaceState どちらも呼ばない）
+let skipHistoryWrite = false;
 // anchor: 描き直し後にスクロール・フォーカスを合わせる取引の GUID（編集のキャンセル時など）
-function render({scrollBottom = false, anchor = null} = {}){
+// nav: true なら「別の画面への移動」として履歴に積む（pushState）。省略時は従来通り replaceState
+function render({scrollBottom = false, anchor = null, nav = false} = {}){
   if (!state.book) return;
-  // 画面の種類に合わせて URL を同期する（最近の取引なら /recent、それ以外なら /）。
-  // 履歴を汚さないよう pushState ではなく replaceState を使う
-  const path = state.view === 'recent' ? '/recent' : state.view === 'report' ? '/report' : '/';
-  if (location.pathname !== path) history.replaceState(null, '', path + location.search);
+  // 画面の種類に合わせて URL を同期する（最近の取引なら /recent、損益計算書なら /report、
+  // 勘定科目を選んでいればその guid、それ以外は /）。科目の切り替えだけ履歴に積み、
+  // 同じ画面内の描き直し（検索絞り込み・編集中など）は積まない
+  const path = state.view === 'recent' ? '/recent' : state.view === 'report' ? '/report'
+    : state.selected ? '/' + state.selected : '/';
+  if (!skipHistoryWrite && location.pathname !== path) {
+    try { history[nav ? 'pushState' : 'replaceState'](null, '', path + location.search); } catch {}
+  }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
   const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.selected;
@@ -1375,7 +1383,7 @@ async function openRecent(){
   state.view = 'recent'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
   app.classList.add('show-main');
-  render();
+  render({nav: true});
   try { await loadRecent(); } catch (e) { toast(e.message); return; }
   if (state.view === 'recent') render({scrollBottom: true});
 }
@@ -1386,7 +1394,7 @@ async function openReport(){
   state.drafts = {}; state.openSplits.clear();
   state.report = null;
   app.classList.add('show-main');
-  render();
+  render({nav: true});
   try { await loadReport(); } catch (e) { toast(e.message); return; }
   if (state.view === 'report') render();
 }
@@ -1723,14 +1731,14 @@ async function quickfillPair(form){
 
 /* ---------- イベント ---------- */
 const app = document.getElementById('app');
-async function select(id){
+async function select(id, {nav = true} = {}){
   if (!A[id]) return;
   state.view = 'account';
   state.selected = id; state.editing = null; state.q = ''; state.limit = PAGE;
   state.drafts = {}; state.openSplits.clear();
   for (let a = A[A[id].parent]; a; a = A[a.parent]) state.expanded.add(a.guid);
   app.classList.add('show-main');
-  render();
+  render({nav});
   if (!A[id].placeholder || !CHILDREN[id]) {
     try { await loadRegister(id); } catch (e) { toast(e.message); return; }
     if (state.selected === id) render({scrollBottom: true});
@@ -2230,12 +2238,38 @@ async function boot(){
   if (location.pathname === '/recent') return openRecent();
   if (location.pathname === '/report') return openReport();
   loadRecent().then(() => renderSidebar()).catch(() => {});
-  // 最初は資産科目のうち取引件数が最も多いものを開く
+  // /<勘定科目の guid> で開いた・リロードした場合は、画面幅に関わらずその科目を直接開く
+  const directId = location.pathname.slice(1);
+  if (directId && A[directId]) return select(directId, {nav: false});
+  // それ以外（ルートなど）は、最初は資産科目のうち取引件数が最も多いものを開く。
+  // 自動選択は「移動」ではないので履歴には積まない（nav: false）
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
     .sort((x, y) => y.count - x.count)[0] || state.book.accounts.find(a => !a.placeholder);
-  if (first && !matchMedia('(max-width: 820px)').matches) await select(first.guid);
+  if (first && !matchMedia('(max-width: 820px)').matches) await select(first.guid, {nav: false});
   else render();
 }
+
+// ブラウザの戻る/進むでの URL 変化に合わせて画面を描き直す。
+// 履歴を書き換えると戻る/進む自体が壊れるため、この描き直し中は render() 側の
+// pushState/replaceState を一時的に止める（skipHistoryWrite）
+async function syncViewFromLocation(){
+  skipHistoryWrite = true;
+  try {
+    const p = location.pathname;
+    if (p === '/recent') return await openRecent();
+    if (p === '/report') return await openReport();
+    const id = p.slice(1);
+    if (id && A[id]) return await select(id);
+    // ルート、またはもう存在しない科目の guid なら「未選択」に戻す
+    state.view = 'account'; state.selected = null; state.editing = null;
+    state.drafts = {}; state.openSplits.clear();
+    app.classList.remove('show-main');
+    render();
+  } finally {
+    skipHistoryWrite = false;
+  }
+}
+window.addEventListener('popstate', () => { if (state.book) syncViewFromLocation(); });
 </script>
 </body>
 </html>

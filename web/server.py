@@ -775,9 +775,10 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         p, qs = url.path, parse_qs(url.query)
         b = self.book
-        if method == "GET" and p in ("/", "/index.html", "/recent", "/report"):
-            # 画面は誰でも読める（ログイン画面を含むため）。データはすべて API 側で保護する
-            # /recent・/report はそれぞれの画面を直接開くためのエントリーポイント（ホーム画面への追加用）
+        if method == "GET" and not p.startswith("/api/"):
+            # 画面は誰でも読める（ログイン画面を含むため）。データはすべて API 側で保護する。
+            # /recent・/report・/<勘定科目の guid> など、フロント側のクライアントサイドルーティングが
+            # 扱うパスはすべてここで index.html を返す（SPA のキャッチオール。直接アクセス・リロード対応）
             return self._send(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
         if self.auth:
             authed = self.auth.is_authenticated(self.headers.get("Cookie"))
