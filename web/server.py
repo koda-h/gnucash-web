@@ -37,6 +37,9 @@ STATIC_DIR = Path(__file__).parent / "static"
 DEFAULT_FILE = Path(__file__).resolve().parent.parent / "data" / "gnucash.gnucash"
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
+ACCOUNT_TYPES = {"ASSET", "BANK", "CASH", "STOCK", "MUTUAL", "RECEIVABLE", "CURRENCY", "CREDIT",
+                  "LIABILITY", "PAYABLE", "INCOME", "EXPENSE", "EQUITY", "TRADING"}
+
 # post_date は 'YYYYMMDDHHMMSS' と 'YYYY-MM-DD HH:MM:SS' が混在するため、並べ替えには正規化した値を使う
 NORM_POST_DATE = "replace(replace(replace(t.post_date,'-',''),' ',''),':','')"
 NORM_ENTER_DATE = "replace(replace(replace(t.enter_date,'-',''),' ',''),':','')"
@@ -161,6 +164,9 @@ class Book:
             currency = con.execute("""
                 select c.mnemonic from transactions t join commodities c on c.guid = t.currency_guid
                 group by 1 order by count(*) desc limit 1""").fetchone()
+            commodities = [dict(r) for r in con.execute("""
+                select guid, mnemonic, fraction from commodities
+                where namespace in ('CURRENCY', 'ISO4217') order by mnemonic""")]
             locks = self.locked_by(con)
 
         by_parent = {}
@@ -204,6 +210,7 @@ class Book:
             "writeBlocked": bool(locks) and not self.force,
             "currency": currency[0] if currency else "JPY",
             "accounts": accounts,
+            "commodities": commodities,
             "descriptions": descs,
             "today": date.today().isoformat(),
         }
@@ -378,6 +385,92 @@ class Book:
         if locks and not self.force:
             who = ", ".join(f"{l['Hostname']} (PID {l['PID']})" for l in locks)
             raise ApiError(409, f"GnuCash デスクトップで開かれています（{who}）。閉じてから操作するか --force で起動してください")
+
+    def _descendant_guids(self, con, guid):
+        """guid の子孫科目 guid の集合（guid 自身は含まない）。循環参照チェックに使う。"""
+        children = {}
+        for g, p in con.execute("select guid, parent_guid from accounts"):
+            children.setdefault(p, []).append(g)
+        out, stack = set(), [guid]
+        while stack:
+            for c in children.get(stack.pop(), []):
+                if c not in out:
+                    out.add(c)
+                    stack.append(c)
+        return out
+
+    def _split_count(self, con, guid):
+        return con.execute("select count(*) from splits where account_guid = ?", (guid,)).fetchone()[0]
+
+    def _root_guid(self, con):
+        return con.execute("select root_account_guid from books").fetchone()[0]
+
+    def _validate_account_body(self, con, body, existing_guid=None):
+        name = str(body.get("name", "")).strip()
+        if not name:
+            raise ApiError(400, "科目名を入力してください")
+        type_ = body.get("type")
+        if type_ not in ACCOUNT_TYPES:
+            raise ApiError(400, "科目の種類が正しくありません")
+        # 「最上位」（parent 未指定）は帳簿の ROOT 科目の子として作る
+        parent = body.get("parent") or self._root_guid(con)
+        if con.execute("select 1 from accounts where guid = ?", (parent,)).fetchone() is None:
+            raise ApiError(400, "親科目が見つかりません")
+        if existing_guid and (parent == existing_guid or parent in self._descendant_guids(con, existing_guid)):
+            raise ApiError(400, "自分自身、またはその子科目を親には選べません")
+        commodity = con.execute(
+            "select guid, mnemonic, fraction, namespace from commodities where guid = ?",
+            (body.get("commodity"),)).fetchone()
+        if commodity is None or commodity["namespace"] not in ("CURRENCY", "ISO4217"):
+            raise ApiError(400, "通貨が正しくありません")
+        return {
+            "name": name, "type": type_, "parent": parent, "commodity": commodity,
+            "placeholder": bool(body.get("placeholder")), "hidden": bool(body.get("hidden")),
+            "code": str(body.get("code", "")).strip(), "description": str(body.get("description", "")).strip(),
+        }
+
+    def create_account(self, body):
+        with self.connect() as con:
+            self._writable(con)
+            v = self._validate_account_body(con, body)
+            guid = new_guid()
+            con.execute("""
+                insert into accounts (guid, name, account_type, commodity_guid, commodity_scu, non_std_scu,
+                                       parent_guid, code, description, hidden, placeholder)
+                values (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)""",
+                        (guid, v["name"], v["type"], v["commodity"]["guid"], v["commodity"]["fraction"] or 1,
+                         v["parent"], v["code"], v["description"], int(v["hidden"]), int(v["placeholder"])))
+        return {"guid": guid}
+
+    def update_account(self, guid, body):
+        with self.connect() as con:
+            self._writable(con)
+            acc = self._account(con, guid)
+            v = self._validate_account_body(con, body, existing_guid=guid)
+            has_tx = self._split_count(con, guid) > 0
+            if has_tx and v["commodity"]["guid"] != acc["commodity_guid"]:
+                raise ApiError(400, "取引がある科目は通貨を変更できません")
+            if has_tx and v["placeholder"]:
+                raise ApiError(400, "取引がある科目は集計用にできません")
+            con.execute("""
+                update accounts set name = ?, account_type = ?, commodity_guid = ?, commodity_scu = ?,
+                                     non_std_scu = 0, parent_guid = ?, code = ?, description = ?,
+                                     hidden = ?, placeholder = ? where guid = ?""",
+                        (v["name"], v["type"], v["commodity"]["guid"], v["commodity"]["fraction"] or 1,
+                         v["parent"], v["code"], v["description"], int(v["hidden"]), int(v["placeholder"]), guid))
+        return {"guid": guid}
+
+    def delete_account(self, guid):
+        with self.connect() as con:
+            self._writable(con)
+            self._account(con, guid)
+            if con.execute("select 1 from accounts where parent_guid = ? limit 1", (guid,)).fetchone():
+                raise ApiError(400, "子科目があるため削除できません。先に子科目を削除するか、別の親に移動してください")
+            if self._split_count(con, guid) > 0:
+                raise ApiError(400, "取引が残っているため削除できません。先に取引を削除するか、別の科目に移動してください")
+            con.execute("delete from slots where obj_guid = ?", (guid,))
+            con.execute("delete from accounts where guid = ?", (guid,))
+        return {"guid": guid}
 
     def _validate(self, con, body, need_amount):
         try:
@@ -674,6 +767,13 @@ class Handler(BaseHTTPRequestHandler):
         m = re.fullmatch(r"/api/accounts/([0-9a-f]{32})/register", p)
         if method == "GET" and m:
             return self._send(200, b.register(m[1]))
+        if method == "POST" and p == "/api/accounts":
+            return self._send(201, b.create_account(self._body()))
+        m = re.fullmatch(r"/api/accounts/([0-9a-f]{32})", p)
+        if m and method == "PUT":
+            return self._send(200, b.update_account(m[1], self._body()))
+        if m and method == "DELETE":
+            return self._send(200, b.delete_account(m[1]))
         if method == "GET" and p == "/api/quickfill":
             account, desc = qs.get("account", [""])[0], qs.get("desc", [""])[0]
             # account なし = 最近の取引画面の「出金元 → 入金先」用

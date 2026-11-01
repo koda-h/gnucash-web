@@ -108,10 +108,16 @@ input{font-size:16px}
 .chev svg{transition:transform .15s}
 .chev.open svg{transform:rotate(90deg)}
 .chev-sp{width:20px;flex:none}
-.tname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tname-wrap{flex:1;min-width:0;display:flex;align-items:center;gap:4px}
+.tname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .trow.ph .tname{font-weight:500}
 .tbal{color:var(--muted);font-size:13px}
 .tbal.neg{color:var(--neg)}
+/* 勘定科目の編集ボタン（鉛筆アイコン）。一覧の行・科目名見出し・詳細画面のタイトル横に出す */
+.tedit{width:20px;height:20px;flex:none;border:0;background:none;padding:0;cursor:pointer;color:var(--faint);display:grid;place-items:center;border-radius:4px}
+.tedit:hover{color:var(--text);background:var(--surface-2)}
+.trow.sel .tedit{color:var(--accent-text)}
+.htedit{width:24px;height:24px;vertical-align:middle;margin-left:2px}
 mark{background:var(--flash);color:inherit;border-radius:2px}
 
 /* ---------- Main ---------- */
@@ -227,6 +233,23 @@ dialog.keys::backdrop{background:rgba(0,0,0,.5)}
 .keys-add .row2{display:flex;gap:8px}
 .keys-add .f{flex:1}
 .keys-add .hint{display:block;margin-top:8px}
+dialog.acct{width:min(440px, calc(100vw - 32px))}
+.acct-body{padding:16px 20px 4px;max-height:min(520px, 70vh);overflow:auto}
+.acct-field{margin-bottom:14px}
+.acct-field label{display:block;font-size:12px;color:var(--muted);margin:0 0 4px}
+.acct-field .f{width:100%}
+.acct-row2{display:flex;gap:10px}
+.acct-row2 .acct-field{flex:1;min-width:0}
+.acct-check{display:flex;align-items:flex-start;gap:8px;font-size:13px;line-height:1.5;margin-bottom:12px;cursor:pointer}
+.acct-check input{width:16px;height:16px;margin-top:2px;flex:none}
+.acct-check.is-disabled{color:var(--faint);cursor:default}
+.acct-msg{font-size:12.5px;color:var(--neg);min-height:18px;margin-top:2px}
+.acct-bar{display:flex;align-items:center;gap:8px;padding:14px 20px 18px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
+
+/* 汎用の確認ダイアログ（window.confirm() の代わり。削除確認など） */
+dialog.confirm{width:min(400px, calc(100vw - 32px))}
+.confirm-body{padding:18px 20px 4px;font-size:13.5px;line-height:1.7;color:var(--text)}
+.confirm-bar{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px 18px;margin-top:14px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
 
 /* 最近の取引 */
 .nav-recent{margin:0 8px 10px;width:calc(100% - 16px);display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:0;border-radius:9px;
@@ -429,6 +452,9 @@ form.busy{opacity:.6;pointer-events:none}
       <button class="icon-btn" id="toggleAll" title="すべて展開／折りたたみ">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></svg>
       </button>
+      <button class="icon-btn" id="newAcctBtn" title="新しい勘定科目">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
     </div>
     <nav class="tree" id="tree" role="tree"></nav>
     <div class="side-foot" id="sideFoot" hidden>
@@ -441,6 +467,8 @@ form.busy{opacity:.6;pointer-events:none}
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastUndo" hidden>元に戻す</button></div>
 <div class="suggest-box" id="suggestBox" hidden></div>
 <dialog class="keys" id="keysDialog"></dialog>
+<dialog class="keys acct" id="acctDialog"></dialog>
+<dialog class="keys confirm" id="confirmDialog"></dialog>
 
 
 <script>
@@ -549,6 +577,7 @@ const WD = ['日','月','火','水','木','金','土'];
 const fmtDate = iso => { const [y,m,d] = iso.split('-'); return `${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span>`; };
 const hl = (text, q) => { if (!q) return esc(text); const i = text.toLowerCase().indexOf(q.toLowerCase()); return i < 0 ? esc(text) : esc(text.slice(0,i)) + '<mark>' + esc(text.slice(i, i+q.length)) + '</mark>' + esc(text.slice(i+q.length)); };
 const chevron = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 6 6 6-6 6"/></svg>';
+const pencilIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 function parseAmt(s){
   const v = String(s).replace(/[,，¥\s円]/g, '').replace(/[０-９．]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
   if (v === '') return 0;
@@ -597,7 +626,10 @@ function renderSidebar(){
     return `<div role="treeitem" aria-expanded="${kids.length ? open : ''}">
       <div class="trow ${state.view==='account' && state.selected===id?'sel':''} ${a.placeholder?'ph':''} ${a.hidden?'hidden-acct':''}" data-id="${id}" style="--d:${depth}" title="${esc(a.description)}">
         ${kids.length ? `<button class="chev ${open?'open':''}" data-toggle="${id}" aria-label="展開">${chevron}</button>` : '<span class="chev-sp"></span>'}
-        <span class="tname">${hl(a.name, q)}</span>
+        <span class="tname-wrap">
+          <span class="tname">${hl(a.name, q)}</span>
+          <button type="button" class="tedit" data-acct-edit="${id}" title="編集" aria-label="「${esc(a.name)}」を編集">${pencilIcon}</button>
+        </span>
         <span class="tbal num ${v<0?'neg':''}">${money(v, id)}</span>
       </div>
       ${kids.length && open ? `<div role="group">${kids.map(c => node(c, depth+1)).join('')}</div>` : ''}
@@ -605,7 +637,13 @@ function renderSidebar(){
   };
   document.getElementById('tree').innerHTML = ROOTS.map(r => {
     if (q && !matches(r)) return '';
-    return `<div class="group-h"><span class="trow-h" data-id="${r}" style="cursor:pointer">${esc(A[r].name)}</span><span class="num">${money(TOTAL[r]*sign(r), r)}</span></div>`
+    return `<div class="group-h">
+      <span style="display:flex;align-items:center;gap:4px;min-width:0">
+        <span class="trow-h" data-id="${r}" style="cursor:pointer">${esc(A[r].name)}</span>
+        <button type="button" class="tedit" data-acct-edit="${r}" title="編集" aria-label="「${esc(A[r].name)}」を編集">${pencilIcon}</button>
+      </span>
+      <span class="num">${money(TOTAL[r]*sign(r), r)}</span>
+    </div>`
       + (CHILDREN[r] || []).map(c => node(c, 0)).join('');
   }).join('') || '<div class="empty">該当する勘定科目がありません</div>';
 }
@@ -624,7 +662,7 @@ function renderMain(){
       <div>
         <button class="back" data-back>‹ 勘定科目一覧</button>
         <div class="crumbs">${ids.map(p => `<button data-go="${p}">${esc(A[p].name)}</button><span>›</span>`).join('')}</div>
-        <h1 class="title">${esc(a.name)} <span class="badge">${T(a.type).label}${a.placeholder?'・集計用':''}${a.commodity.mnemonic !== state.book.currency ? '・' + esc(a.commodity.mnemonic) : ''}</span></h1>
+        <h1 class="title">${esc(a.name)} <span class="badge">${T(a.type).label}${a.placeholder?'・集計用':''}${a.commodity.mnemonic !== state.book.currency ? '・' + esc(a.commodity.mnemonic) : ''}</span><button type="button" class="tedit htedit" data-acct-edit="${id}" title="編集" aria-label="「${esc(a.name)}」を編集">${pencilIcon}</button></h1>
         ${a.description ? `<div class="desc">${esc(a.description)}</div>` : ''}
       </div>
       <div class="stats" id="stats"></div>
@@ -1561,12 +1599,162 @@ async function select(id){
   }
 }
 
+/* ---------- 勘定科目の追加・編集・削除 ---------- */
+let acctEditGuid = null;   // null = 新規作成、GUID = その科目を編集中
+function accountParentOptions(excludeIds){
+  const out = [];
+  const walk = (id, depth) => {
+    if (excludeIds.has(id)) return;
+    out.push({id, depth});
+    (CHILDREN[id] || []).forEach(c => walk(c, depth + 1));
+  };
+  ROOTS.forEach(r => walk(r, 0));
+  return out;
+}
+function descendantGuidsOf(id){
+  const out = new Set([id]);
+  (CHILDREN[id] || []).forEach(c => descendantGuidsOf(c).forEach(x => out.add(x)));
+  return out;
+}
+function openAccountDialog(guid = null, parentHint = null){
+  acctEditGuid = guid || null;
+  const draft = guid ? {...A[guid]} : {
+    name: '', type: (parentHint && A[parentHint]?.type) || 'EXPENSE', parent: parentHint || null,
+    commodity: (parentHint && A[parentHint]?.commodity) || {mnemonic: state.book.currency, fraction: 1},
+    placeholder: false, hidden: false, description: '', code: '',
+  };
+  renderAccountDialog(draft);
+  const d = document.getElementById('acctDialog');
+  d.showModal();
+  d.querySelector('[name=name]')?.focus();
+}
+function renderAccountDialog(draft, message = ''){
+  const d = document.getElementById('acctDialog');
+  const editing = !!acctEditGuid;
+  const exclude = editing ? descendantGuidsOf(acctEditGuid) : new Set();
+  const opts = accountParentOptions(exclude);
+  const hasKids = editing && (CHILDREN[acctEditGuid] || []).length > 0;
+  const hasTx = editing && A[acctEditGuid].count > 0;
+  const blockReason = hasKids ? '子科目があるため削除できません' : hasTx ? '取引が残っているため削除できません' : '';
+  d.innerHTML = `
+    <div class="keys-h"><h2>${editing ? '勘定科目を編集' : '勘定科目を追加'}</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
+    <form class="acct-body" data-acct-form>
+      <div class="acct-field"><label for="acctName">科目名</label><input class="f" id="acctName" name="name" value="${esc(draft.name)}" maxlength="200" autocomplete="off" required></div>
+      <div class="acct-row2">
+        <div class="acct-field"><label for="acctType">種類</label><select class="f" id="acctType" name="type">
+          ${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${draft.type === k ? 'selected' : ''}>${esc(v.label)}</option>`).join('')}
+        </select></div>
+        <div class="acct-field"><label for="acctCur">通貨</label><select class="f" id="acctCur" name="commodity" ${hasTx ? 'disabled' : ''} title="${hasTx ? '取引がある科目は通貨を変更できません' : ''}">
+          ${state.book.commodities.map(c => `<option value="${c.guid}" ${draft.commodity.mnemonic === c.mnemonic ? 'selected' : ''}>${esc(c.mnemonic)}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="acct-field"><label for="acctParent">親科目</label><select class="f" id="acctParent" name="parent">
+        <option value="" ${!draft.parent ? 'selected' : ''}>（最上位）</option>
+        ${opts.map(o => `<option value="${o.id}" ${draft.parent === o.id ? 'selected' : ''}>${'　'.repeat(o.depth)}${esc(A[o.id].name)}</option>`).join('')}
+      </select></div>
+      <label class="acct-check ${hasTx ? 'is-disabled' : ''}"><input type="checkbox" name="placeholder" ${draft.placeholder ? 'checked' : ''} ${hasTx ? 'disabled' : ''}>
+        この科目には取引を記録しない（集計専用・子科目をまとめる）${hasTx ? '　※取引があるため変更できません' : ''}</label>
+      <label class="acct-check"><input type="checkbox" name="hidden" ${draft.hidden ? 'checked' : ''}> 科目一覧に表示しない</label>
+      <div class="acct-row2">
+        <div class="acct-field"><label for="acctCode">コード（任意）</label><input class="f" id="acctCode" name="code" value="${esc(draft.code || '')}" maxlength="40" autocomplete="off"></div>
+        <div class="acct-field"><label for="acctDesc">説明（任意）</label><input class="f" id="acctDesc" name="description" value="${esc(draft.description || '')}" maxlength="500" autocomplete="off"></div>
+      </div>
+      <div class="acct-msg" data-msg>${esc(message)}</div>
+      <div class="acct-bar">
+        ${editing ? `<button type="button" class="btn ghost" data-acct-add-child>＋ 子科目を追加</button>` : ''}
+        <span class="spacer"></span>
+        ${editing ? `<button type="button" class="btn danger" data-acct-del ${blockReason ? 'disabled' : ''} title="${blockReason}">削除</button>` : ''}
+        <button type="button" class="btn ghost" data-close>キャンセル</button>
+        <button type="submit" class="btn primary">保存</button>
+      </div>
+    </form>`;
+}
+// 汎用の確認ダイアログ（window.confirm() の代わり。ネイティブ alert 風ではない独自UIにするため）。
+// Promise<boolean> を返し、「OK」側のボタンが押されたときだけ true になる
+function confirmDialog({title = '確認', body = '', okLabel = 'OK', danger = false} = {}){
+  const d = document.getElementById('confirmDialog');
+  d.innerHTML = `
+    <div class="keys-h"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
+    <div class="confirm-body">${esc(body)}</div>
+    <div class="confirm-bar">
+      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-ok>${esc(okLabel)}</button>
+    </div>`;
+  return new Promise(resolve => {
+    const finish = result => { d.removeEventListener('click', onClick); d.removeEventListener('close', onClose); d.close(); resolve(result); };
+    const onClick = e => {
+      if (e.target.closest('[data-ok]')) return finish(true);
+      if (e.target.closest('[data-cancel]') || e.target.closest('[data-close]') || e.target === d) return finish(false);
+    };
+    const onClose = () => resolve(false);   // Esc キーで閉じた場合
+    d.addEventListener('click', onClick);
+    d.addEventListener('close', onClose, {once: true});
+    d.showModal();
+  });
+}
+async function deleteAccountFromDialog(){
+  const guid = acctEditGuid; if (!guid) return;
+  const ok = await confirmDialog({
+    title: '勘定科目を削除',
+    body: `勘定科目「${A[guid].name}」を削除しますか？この操作は取り消せません。`,
+    okLabel: '削除', danger: true,
+  });
+  if (!ok) return;
+  const name = A[guid].name;
+  try {
+    await api('DELETE', `/api/accounts/${guid}`);
+    document.getElementById('acctDialog').close();
+    if (state.selected === guid) { state.selected = null; state.view = 'account'; }
+    await loadBook();
+    render();
+    toast(`勘定科目「${name}」を削除しました`);
+  } catch (e) {
+    document.getElementById('acctDialog').querySelector('[data-msg]').textContent = e.message;
+  }
+}
+document.getElementById('acctDialog').addEventListener('click', e => {
+  const d = document.getElementById('acctDialog');
+  if (e.target.closest('[data-close]') || e.target === d) return d.close();
+  if (e.target.closest('[data-acct-del]')) return deleteAccountFromDialog();
+  if (e.target.closest('[data-acct-add-child]')) { const parent = acctEditGuid; d.close(); openAccountDialog(null, parent); return; }
+});
+document.getElementById('acctDialog').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, btn = f.querySelector('button[type=submit]');
+  const name = f.elements.name.value.trim();
+  if (!name) { f.querySelector('[data-msg]').textContent = '科目名を入力してください'; f.elements.name.focus(); return; }
+  const body = {
+    name, type: f.elements.type.value, parent: f.elements.parent.value || null,
+    commodity: f.elements.commodity.value,
+    placeholder: f.elements.placeholder.checked, hidden: f.elements.hidden.checked,
+    code: f.elements.code.value.trim(), description: f.elements.description.value.trim(),
+  };
+  const wasCreate = !acctEditGuid;
+  btn.disabled = true;
+  try {
+    const res = acctEditGuid ? await api('PUT', `/api/accounts/${acctEditGuid}`, body) : await api('POST', '/api/accounts', body);
+    document.getElementById('acctDialog').close();
+    const newGuidOrSelf = res.guid || acctEditGuid;
+    await loadBook();
+    for (let a = A[body.parent]; a; a = A[a.parent]) state.expanded.add(a.guid);   // 親が畳まれていても新しい科目が見えるようにする
+    if (state.view === 'account' && state.selected === newGuidOrSelf) { state.reg = null; await loadRegister(newGuidOrSelf); }
+    render();
+    if (wasCreate) toast(`勘定科目「${name}」を追加しました`);
+  } catch (e) {
+    f.querySelector('[data-msg]').textContent = e.message;
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('tree').addEventListener('click', e => {
+  const edit = e.target.closest('[data-acct-edit]');
+  if (edit) { openAccountDialog(edit.dataset.acctEdit); return; }
   const tg = e.target.closest('[data-toggle]');
   if (tg) { const id = tg.dataset.toggle; state.expanded.has(id) ? state.expanded.delete(id) : state.expanded.add(id); renderSidebar(); return; }
   const row = e.target.closest('[data-id]');
   if (row) select(row.dataset.id);
 });
+document.getElementById('newAcctBtn').onclick = () => openAccountDialog(null, null);
 document.getElementById('treeQ').addEventListener('input', e => { state.treeQ = e.target.value; renderSidebar(); });
 
 /* 入力欄のクリア（× ボタン、または Esc キー）。input イベントを発生させて既存の処理に任せる */
@@ -1595,6 +1783,8 @@ document.getElementById('toggleAll').onclick = () => {
 const main = document.getElementById('main');
 main.addEventListener('click', e => {
   const t = e.target;
+  const edit = t.closest('[data-acct-edit]');
+  if (edit) { openAccountDialog(edit.dataset.acctEdit); return; }
   if (t.closest('[data-back]')) { app.classList.remove('show-main'); return; }
   const go = t.closest('[data-go]'); if (go) return select(go.dataset.go);
   const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; state.limit = PAGE; render({scrollBottom: true}); return; }

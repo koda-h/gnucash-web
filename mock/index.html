@@ -234,6 +234,11 @@ dialog.acct{width:min(440px, calc(100vw - 32px))}
 .acct-msg{font-size:12.5px;color:var(--neg);min-height:18px;margin-top:2px}
 .acct-bar{display:flex;align-items:center;gap:8px;padding:14px 20px 18px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
 
+/* 汎用の確認ダイアログ（window.confirm() の代わり。削除確認など） */
+dialog.confirm{width:min(400px, calc(100vw - 32px))}
+.confirm-body{padding:18px 20px 4px;font-size:13.5px;line-height:1.7;color:var(--text)}
+.confirm-bar{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px 18px;margin-top:14px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
+
 /* 最近の取引 */
 .nav-recent{margin:0 8px 10px;width:calc(100% - 16px);display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:0;border-radius:9px;
   background:none;cursor:pointer;font-weight:500;text-align:left}
@@ -448,6 +453,7 @@ form.busy{opacity:.6;pointer-events:none}
 <datalist id="descList"></datalist>
 <dialog class="keys" id="keysDialog"></dialog>
 <dialog class="keys acct" id="acctDialog"></dialog>
+<dialog class="keys confirm" id="confirmDialog"></dialog>
 
 
 <script>
@@ -1876,15 +1882,45 @@ function renderAccountDialog(draft, message = ''){
       </div>
     </form>`;
 }
+// 汎用の確認ダイアログ（window.confirm() の代わり。ネイティブ alert 風ではない独自UIにするため）。
+// Promise<boolean> を返し、「OK」側のボタンが押されたときだけ true になる
+function confirmDialog({title = '確認', body = '', okLabel = 'OK', danger = false} = {}){
+  const d = document.getElementById('confirmDialog');
+  d.innerHTML = `
+    <div class="keys-h"><h2>${esc(title)}</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
+    <div class="confirm-body">${esc(body)}</div>
+    <div class="confirm-bar">
+      <button type="button" class="btn ghost" data-cancel>キャンセル</button>
+      <button type="button" class="btn ${danger ? 'danger' : 'primary'}" data-ok>${esc(okLabel)}</button>
+    </div>`;
+  return new Promise(resolve => {
+    const finish = result => { d.removeEventListener('click', onClick); d.removeEventListener('close', onClose); d.close(); resolve(result); };
+    const onClick = e => {
+      if (e.target.closest('[data-ok]')) return finish(true);
+      if (e.target.closest('[data-cancel]') || e.target.closest('[data-close]') || e.target === d) return finish(false);
+    };
+    const onClose = () => resolve(false);   // Esc キーで閉じた場合
+    d.addEventListener('click', onClick);
+    d.addEventListener('close', onClose, {once: true});
+    d.showModal();
+  });
+}
 async function deleteAccountFromDialog(){
   const guid = acctEditGuid; if (!guid) return;
-  if (!confirm(`勘定科目「${A[guid].name}」を削除しますか？この操作は取り消せません。`)) return;
+  const ok = await confirmDialog({
+    title: '勘定科目を削除',
+    body: `勘定科目「${A[guid].name}」を削除しますか？この操作は取り消せません。`,
+    okLabel: '削除', danger: true,
+  });
+  if (!ok) return;
+  const name = A[guid].name;
   try {
     await api('DELETE', `/api/accounts/${guid}`);
     document.getElementById('acctDialog').close();
     if (state.selected === guid) { state.selected = null; state.view = 'account'; }
     await loadBook();
     render();
+    toast(`勘定科目「${name}」を削除しました`);
   } catch (e) {
     document.getElementById('acctDialog').querySelector('[data-msg]').textContent = e.message;
   }
@@ -1906,6 +1942,7 @@ document.getElementById('acctDialog').addEventListener('submit', async e => {
     placeholder: f.elements.placeholder.checked, hidden: f.elements.hidden.checked,
     code: f.elements.code.value.trim(), description: f.elements.description.value.trim(),
   };
+  const wasCreate = !acctEditGuid;
   btn.disabled = true;
   try {
     const res = acctEditGuid ? await api('PUT', `/api/accounts/${acctEditGuid}`, body) : await api('POST', '/api/accounts', body);
@@ -1915,6 +1952,7 @@ document.getElementById('acctDialog').addEventListener('submit', async e => {
     for (let a = A[body.parent]; a; a = A[a.parent]) state.expanded.add(a.guid);   // 親が畳まれていても新しい科目が見えるようにする
     if (state.view === 'account' && state.selected === newGuidOrSelf) { state.reg = null; await loadRegister(newGuidOrSelf); }
     render();
+    if (wasCreate) toast(`勘定科目「${name}」を追加しました`);
   } catch (e) {
     f.querySelector('[data-msg]').textContent = e.message;
     btn.disabled = false;
