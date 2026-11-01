@@ -1088,7 +1088,7 @@ function viewRow(r, id){
   const open = state.openSplits.has(r.guid);
   const acct = r.multi
     ? `<button type="button" class="pill split-toggle ${open?'open':''}" data-split-toggle="${r.guid}" aria-expanded="${open}" title="分割を${open?'閉じる':'表示'}">${chevron}分割取引</button>`
-    : r.other ? `<span class="pill" title="${esc(fullName(r.other))}">${esc(path(r.other).slice(-2).join(' › '))}</span>` : '';
+    : r.other ? `<button type="button" class="pill go" data-go="${r.other}" title="${esc(fullName(r.other))}">${esc(path(r.other).slice(-2).join(' › '))}</button>` : '';
   const rec = r.rec === 'y' ? '<span class="rec" title="照合済">照合</span>' : r.rec === 'c' ? '<span class="rec c" title="確認済">確認</span>' : '';
   return `<div class="cols row ${state.flash===r.guid?'flash':''}" data-edit="${r.guid}" tabindex="0">
     <span class="c-date num">${fmtDate(r.date)}</span>
@@ -1110,7 +1110,9 @@ function splitView(tx){
   return `<div class="split-view">${tx.splits.map(s => `<div class="cols sline">
     <span></span>
     <span class="s-memo">${esc(s.memo || s.action)}</span>
-    <span class="c-acct"><span class="pill ${s.account===state.selected?'self':''}" title="${esc(fullName(s.account))}">${esc(path(s.account).slice(-2).join(' › '))}</span></span>
+    <span class="c-acct">${s.account===state.selected
+      ? `<span class="pill self" title="${esc(fullName(s.account))}">${esc(path(s.account).slice(-2).join(' › '))}</span>`
+      : `<button type="button" class="pill go" data-go="${s.account}" title="${esc(fullName(s.account))}">${esc(path(s.account).slice(-2).join(' › '))}</button>`}</span>
     <span class="r num" data-label="${colL}">${s.value > 0 ? money(s.value, tx.currency) : ''}</span>
     <span class="r num" data-label="${colR}">${s.value < 0 ? money(-s.value, tx.currency) : ''}</span>
     <span class="r">${recBadge(s.rec)}</span>
