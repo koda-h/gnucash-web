@@ -306,6 +306,33 @@ class Book:
         return {"days": days, "since": since.date().isoformat(),
                 "rows": [self._tx_payload(t, splits.get(t["guid"], []), t["guid"] in invoices) for t in txs]}
 
+    def income_statement(self, frm, to):
+        """損益計算書：期間内（from〜to、両端含む・ローカル日付）の収益・費用科目ごとの
+        自分自身の split 合計。非表示科目は集計対象から除く。親科目へのロールアップはフロント側で行う"""
+        try:
+            d_from, d_to = date.fromisoformat(frm), date.fromisoformat(to)
+        except ValueError:
+            raise ApiError(400, "期間が正しくありません")
+        start = datetime.combine(d_from, dtime.min).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        end = datetime.combine(d_to, dtime.max).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        with self.connect() as con:
+            rows = con.execute(f"""
+                select s.account_guid, s.quantity_num, s.quantity_denom, c.fraction
+                from splits s
+                join transactions t on t.guid = s.tx_guid
+                join accounts a on a.guid = s.account_guid
+                left join commodities c on c.guid = a.commodity_guid
+                where {NORM_POST_DATE} between ? and ?
+                  and a.account_type in ('INCOME', 'EXPENSE') and (a.hidden is null or a.hidden = 0)
+            """, (start, end)).fetchall()
+        own, fractions = {}, {}
+        for r in rows:
+            g = r["account_guid"]
+            own[g] = own.get(g, Fraction(0)) + frac(r["quantity_num"], r["quantity_denom"])
+            fractions[g] = r["fraction"] or 1
+        balances = {g: to_number(v, fractions[g]) for g, v in own.items()}
+        return {"from": frm, "to": to, "balances": balances}
+
     def _tx_payload(self, t, splits, has_invoice):
         fraction = t["fraction"] or 1
         enter = parse_ts(t["enter_date"])
@@ -748,9 +775,9 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         p, qs = url.path, parse_qs(url.query)
         b = self.book
-        if method == "GET" and p in ("/", "/index.html", "/recent"):
+        if method == "GET" and p in ("/", "/index.html", "/recent", "/report"):
             # 画面は誰でも読める（ログイン画面を含むため）。データはすべて API 側で保護する
-            # /recent は「最近の取引」画面を直接開くためのエントリーポイント（ホーム画面への追加用）
+            # /recent・/report はそれぞれの画面を直接開くためのエントリーポイント（ホーム画面への追加用）
             return self._send(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
         if self.auth:
             authed = self.auth.is_authenticated(self.headers.get("Cookie"))
@@ -784,6 +811,11 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 raise ApiError(400, "days が正しくありません")
             return self._send(200, b.recent(days))
+        if method == "GET" and p == "/api/reports/income-statement":
+            frm, to = qs.get("from", [""])[0], qs.get("to", [""])[0]
+            if not frm or not to:
+                raise ApiError(400, "from・to が必要です")
+            return self._send(200, b.income_statement(frm, to))
         if method == "POST" and p == "/api/transactions":
             return self._send(201, b.create(self._body()))
         m = re.fullmatch(r"/api/transactions/([0-9a-f]{32})/copy", p)
