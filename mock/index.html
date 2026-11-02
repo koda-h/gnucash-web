@@ -378,6 +378,7 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
 .rep-total{display:flex;justify-content:space-between;padding:10px 20px;font-weight:600;background:var(--surface-2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
 .rep-net{display:flex;justify-content:space-between;padding:16px 20px;font-weight:700;font-size:18px;background:var(--accent-soft);color:var(--accent-text)}
 .rep-net.neg{background:var(--neg-soft);color:var(--neg)}
+.rep-period{padding:0 32px 14px;font-size:15px;font-weight:600;color:var(--text)}
 
 /* toast */
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;background:#101828;color:#fff;border-radius:10px;padding:10px 12px 10px 16px;display:flex;gap:14px;align-items:center;box-shadow:var(--shadow-lg);transition:.2s;z-index:10;font-size:13px}
@@ -393,6 +394,7 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
   .back{display:inline-block}
   .header{padding:16px 16px 12px}
   .toolbar{padding:0 16px 12px}
+  .rep-period{padding:0 16px 12px}
   .toolbar .search{max-width:none;flex-basis:100%}
   .card{margin:0 0 0;border-radius:0;border-left:0;border-right:0}
   .overview{padding:0 16px 24px}
@@ -562,7 +564,7 @@ const TYPES = {
 const T = type => TYPES[type] || {label:type, credit:false, cols:['増加','減少']};
 const SYMBOLS = {JPY:'¥', USD:'$', EUR:'€', GBP:'£', CNY:'元'};
 const PAGE = 300;
-const REPORT_PRESETS = [['month','今月'],['lastMonth','先月'],['year','今年'],['lastYear','去年'],['custom','カスタム']];
+const REPORT_PRESETS = [['month','今月'],['lastMonth','先月'],['month2Ago','2ヶ月前'],['month3Ago','3ヶ月前'],['year','今年'],['lastYear','去年'],['custom','カスタム']];
 // アプリが置かれているパス（ドメイン直下なら "/"、GitHub Pages なら "/gnucash-web/mock/" など）。
 // 末尾の "recent" やファイル名を取り除いて求める
 const BASE = location.pathname.replace(/\/recent\/?$/, '/').replace(/[^/]*$/, '');
@@ -573,6 +575,8 @@ const state = {
   expanded: new Set(),
   editing: null,
   period: 'all',
+  periodRange: null,      // 損益計算書から遷移した場合の期間 {from, to}（'report' チップ用）
+  periodRangeLabel: '',   // 上記の表示ラベル
   q: '',
   treeQ: '',
   flash: null,
@@ -588,7 +592,7 @@ const state = {
   added: new Set(),     // この画面で追加した取引（「追加」の印を付ける）
   reg: null,          // {account, rows}
   reportPreset: 'month', // 損益計算書の期間プリセット
-  reportFrom: '',        // カスタム期間の開始日・終了日
+  reportFrom: '',        // カスタム期間の開始年月・終了年月（"YYYY-MM"、日の指定はなし）
   reportTo: '',
   report: null,          // /api/reports/income-statement の結果
   reportRange: null,     // 実際に使われた {from, to}
@@ -1077,14 +1081,29 @@ function reportRange(preset, today, customFrom, customTo){
   const [y, m] = today.split('-').map(Number);
   const pad2 = n => String(n).padStart(2, '0');
   const lastDay = (yy, mm) => new Date(yy, mm, 0).getDate();   // mm は 1〜12
+  // today の月から n ヶ月前の月初〜月末
+  const monthsAgo = n => { let ty = y, tm = m - n;
+    while (tm <= 0) { tm += 12; ty -= 1; }
+    return {from: `${ty}-${pad2(tm)}-01`, to: `${ty}-${pad2(tm)}-${pad2(lastDay(ty, tm))}`}; };
   switch (preset) {
-    case 'month': return {from: `${y}-${pad2(m)}-01`, to: `${y}-${pad2(m)}-${pad2(lastDay(y, m))}`};
-    case 'lastMonth': { const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1;
-      return {from: `${py}-${pad2(pm)}-01`, to: `${py}-${pad2(pm)}-${pad2(lastDay(py, pm))}`}; }
+    case 'month': return monthsAgo(0);
+    case 'lastMonth': return monthsAgo(1);
+    case 'month2Ago': return monthsAgo(2);
+    case 'month3Ago': return monthsAgo(3);
     case 'year': return {from: `${y}-01-01`, to: `${y}-12-31`};
     case 'lastYear': return {from: `${y - 1}-01-01`, to: `${y - 1}-12-31`};
-    default: return {from: customFrom || `${y}-01-01`, to: customTo || today};   // 'custom'
+    default: {   // 'custom'：年月("YYYY-MM")のみを扱う。開始・終了それぞれの月初〜月末を使う
+      const [fy, fm] = (customFrom || `${y}-01`).split('-').map(Number);
+      const [ty2, tm2] = (customTo || today.slice(0, 7)).split('-').map(Number);
+      return {from: `${fy}-${pad2(fm)}-01`, to: `${ty2}-${pad2(tm2)}-${pad2(lastDay(ty2, tm2))}`};
+    }
   }
+}
+// 損益計算書の期間ラベル（単月プリセットは「2026年11月」、それ以外は「2026年1月 - 2026年12月」）
+const REPORT_SINGLE_MONTH_PRESETS = new Set(['month', 'lastMonth', 'month2Ago', 'month3Ago']);
+function reportPeriodLabel(preset, range){
+  const ym = iso => { const [y, m] = iso.split('-'); return `${y}年${+m}月`; };
+  return REPORT_SINGLE_MONTH_PRESETS.has(preset) ? ym(range.from) : `${ym(range.from)} - ${ym(range.to)}`;
 }
 
 /* ---------- マネーフォワード ME 取り込み ----------
@@ -1432,7 +1451,7 @@ function renderMain(){
   main.innerHTML = header + `
     <div class="toolbar">
       <div class="chips" role="tablist">
-        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年']].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
+        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年'], ...(state.periodRange ? [['report', state.periodRangeLabel || '指定期間']] : [])].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
       </div>
       <label class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -1464,9 +1483,11 @@ function registerBody(id){
   const a = A[id];
   const [colL, colR] = T(a.type).cols;
   const all = state.reg.rows;
-  const from = {all:'', month: state.today.slice(0, 7) + '-01', q3: shiftMonth(state.today, -3), year: state.today.slice(0,4) + '-01-01'}[state.period];
+  const from = {all:'', month: state.today.slice(0, 7) + '-01', q3: shiftMonth(state.today, -3), year: state.today.slice(0,4) + '-01-01',
+    report: state.periodRange?.from || ''}[state.period];
+  const to = state.period === 'report' ? (state.periodRange?.to || '') : '';
   const q = state.q.trim().toLowerCase();
-  let rows = all.filter(r => (!from || r.date >= from) &&
+  let rows = all.filter(r => (!from || r.date >= from) && (!to || r.date <= to) &&
     (!q || r.desc.toLowerCase().includes(q) || (r.num || '').toLowerCase().includes(q) || (r.other && fullName(r.other).toLowerCase().includes(q))));
   const hiddenCount = Math.max(0, rows.length - state.limit);
   rows = rows.slice(hiddenCount);
@@ -1971,8 +1992,8 @@ document.getElementById('navReport').onclick = () => openReport();
 async function changeReportPreset(preset){
   state.reportPreset = preset;
   if (preset === 'custom' && !state.reportFrom) {
-    const r = reportRange('year', state.today);
-    state.reportFrom = r.from; state.reportTo = r.to;
+    state.reportFrom = `${state.today.slice(0, 4)}-01`;
+    state.reportTo = state.today.slice(0, 7);
   }
   state.report = null; render();
   try { await loadReport(); } catch (e) { toast(e.message); return; }
@@ -2130,6 +2151,8 @@ function renderRecent(){
 /* ---------- 損益計算書 ---------- */
 function renderReport(){
   const main = document.getElementById('main');
+  const range = reportRange(state.reportPreset, state.today, state.reportFrom, state.reportTo);
+  const periodLabel = reportPeriodLabel(state.reportPreset, range);
   const header = `
     <div class="header"><div>
       <button class="back" data-back>‹ 勘定科目一覧</button>
@@ -2139,9 +2162,10 @@ function renderReport(){
     <div class="toolbar">
       <div class="chips" role="tablist">${REPORT_PRESETS.map(([k, l]) => `<button class="chip ${state.reportPreset===k?'on':''}" data-report-preset="${k}">${l}</button>`).join('')}</div>
       ${state.reportPreset === 'custom' ? `
-      <label class="fl"><span>開始日</span><input class="f" type="date" id="reportFrom" value="${esc(state.reportFrom)}"></label>
-      <label class="fl"><span>終了日</span><input class="f" type="date" id="reportTo" value="${esc(state.reportTo)}"></label>` : ''}
-    </div>`;
+      <label class="fl"><span>開始年月</span><input class="f" type="month" id="reportFrom" value="${esc(state.reportFrom)}"></label>
+      <label class="fl"><span>終了年月</span><input class="f" type="month" id="reportTo" value="${esc(state.reportTo)}"></label>` : ''}
+    </div>
+    <div class="rep-period">${esc(periodLabel)}</div>`;
   if (!state.report) { main.innerHTML = header + '<div class="loading">読み込み中…</div>'; return; }
 
   const bal = state.report.balances;
@@ -2163,7 +2187,7 @@ function renderReport(){
     const kids = (CHILDREN[id] || []).filter(c => !A[c].hidden);
     const v = total * sign(id);
     return `<div class="rep-row" style="--d:${depth}">
-      <button type="button" class="rep-name" data-go="${id}">${esc(A[id].name)}</button>
+      <button type="button" class="rep-name" data-go="${id}" data-go-from="${range.from}" data-go-to="${range.to}" data-go-label="${esc(periodLabel)}">${esc(A[id].name)}</button>
       <span class="rep-amt num ${v<0?'neg':''}">${money(v, id)}</span>
     </div>` + kids.map(c => node(c, depth + 1)).join('');
   };
@@ -2400,11 +2424,15 @@ async function quickfillPair(form){
 
 /* ---------- イベント ---------- */
 const app = document.getElementById('app');
-async function select(id){
+async function select(id, {repRange = null, repLabel = ''} = {}){
   if (!A[id]) return;
   state.view = 'account';
   state.selected = id; state.editing = null; state.q = ''; state.limit = PAGE;
   state.drafts = {}; state.openSplits.clear();
+  // 損益計算書の勘定科目リンクから来た場合は、その期間だけに絞り込んだ「report」チップを有効にする。
+  // それ以外の遷移では、以前「report」チップを使っていてもクリアして通常の絞り込みに戻す。
+  if (repRange) { state.periodRange = repRange; state.periodRangeLabel = repLabel; state.period = 'report'; }
+  else if (state.period === 'report') { state.period = 'all'; state.periodRange = null; state.periodRangeLabel = ''; }
   for (let a = A[A[id].parent]; a; a = A[a.parent]) state.expanded.add(a.guid);
   app.classList.add('show-main');
   render();
@@ -2612,7 +2640,10 @@ main.addEventListener('click', e => {
   const edit = t.closest('[data-acct-edit]');
   if (edit) { openAccountDialog(edit.dataset.acctEdit); return; }
   if (t.closest('[data-back]')) { app.classList.remove('show-main'); return; }
-  const go = t.closest('[data-go]'); if (go) return select(go.dataset.go);
+  const go = t.closest('[data-go]');
+  if (go) return select(go.dataset.go, go.dataset.goFrom
+    ? {repRange: {from: go.dataset.goFrom, to: go.dataset.goTo}, repLabel: go.dataset.goLabel}
+    : undefined);
   const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; state.limit = PAGE; render({scrollBottom: true}); return; }
   const rpp = t.closest('[data-report-preset]'); if (rpp) return changeReportPreset(rpp.dataset.reportPreset);
   if (t.closest('[data-imp-reset]')) { state.imp = null; render(); return; }
