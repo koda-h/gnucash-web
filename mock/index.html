@@ -290,7 +290,7 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
 
 /* 登録簿の幅が狭いときは 2 段表示（コンテナクエリ） */
 .card{container-type:inline-size;container-name:reg}
-@container reg (max-width: 760px){
+@container reg (max-width: 900px){
   .reg-head{display:none}
   .cols{grid-template-columns:62px minmax(0,1fr) auto;gap:2px 10px;padding:0 16px}
   .row{padding-top:8px;padding-bottom:8px}
@@ -351,6 +351,18 @@ form[data-form="rnew"]:not(.open) .composer-title{margin-bottom:0;color:var(--ac
   .composer:not(.open) > :not(.composer-title){display:none}
   .composer:not(.open) .composer-title{margin:0;cursor:pointer;color:var(--accent);font-size:14px}
   .composer:not(.open){padding-top:14px;padding-bottom:14px}
+}
+/* マネーフォワード ME 取り込みの確認テーブルは、6列を横に並べるにはやや幅が要るので
+   register など他の2段表示（900px）より狭い専用のしきい値で切り替える */
+@container reg (max-width: 640px){
+  .imp-grid.imp-head{display:none}
+  .imp-grid.imp-row2{grid-template-columns:52px minmax(0,1fr) auto;grid-template-rows:auto auto auto;gap:3px 10px;padding:10px 16px}
+  .imp-grid.imp-row2 > *:nth-child(1){grid-area:1/1/4/2;font-size:12px;color:var(--muted);align-self:start;white-space:normal}
+  .imp-grid.imp-row2 > *:nth-child(2){grid-area:1/2/2/3}
+  .imp-grid.imp-row2 > *:nth-child(3){grid-area:2/2/3/3;font-size:12px;color:var(--muted)}
+  .imp-grid.imp-row2 > *:nth-child(4){grid-area:3/2/4/3;font-size:12px;color:var(--muted)}
+  .imp-grid.imp-row2 > *:nth-child(5){grid-area:1/3/2/4;text-align:right}
+  .imp-grid.imp-row2 > *:nth-child(6){grid-area:2/3/4/4;flex-direction:column;align-items:flex-end;gap:2px}
 }
 
 /* 損益計算書 */
@@ -424,6 +436,54 @@ form.busy{opacity:.6;pointer-events:none}
 .split-ro{grid-column:1/-1;margin-top:10px;border-radius:8px;overflow:hidden}
 .split-ro .split-view{border:0}
 
+/* マネーフォワード ME 取り込み */
+.imp-section{padding:16px 20px;border-bottom:1px solid var(--border)}
+.imp-section h3{font-size:13px;font-weight:600;color:var(--muted);margin:0 0 10px}
+.imp-drop{display:block;border:2px dashed var(--border-strong);border-radius:10px;padding:20px 16px;color:var(--muted);font-size:13px;line-height:1.7}
+.imp-drop input[type=file]{display:block;margin-top:10px;font-size:13px}
+.imp-map-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.imp-map-row:last-child{border-bottom:0}
+.imp-map-row .lbl{flex:1;min-width:0;font-size:13px}
+.imp-map-row .lbl b{display:block;font-weight:500;color:var(--text)}
+.imp-map-row .lbl span{color:var(--faint);font-size:12px}
+.imp-map-row .f{width:240px;flex:none}
+.imp-cat-group{padding:10px 0;border-bottom:1px solid var(--border)}
+.imp-cat-group:last-child{border-bottom:0}
+.imp-cat-group > .imp-map-row{border-bottom:0;padding:4px 0}
+.imp-sub-list{margin:6px 0 2px 14px;padding-left:12px;border-left:2px solid var(--border)}
+.imp-sub-list .imp-map-row{padding:6px 0}
+.imp-sub-list .imp-map-row .lbl{font-size:12.5px}
+.imp-sub-list .imp-map-row .lbl b{font-weight:500;font-size:12.5px}
+.imp-grid{display:grid;grid-template-columns:92px minmax(90px,1.4fr) minmax(90px,1fr) minmax(90px,1fr) 90px minmax(60px,110px);gap:0 12px;align-items:center;padding:0 20px}
+.imp-grid > *:nth-child(1){white-space:nowrap}
+/* 「4.」一覧のセル省略表示用ツールチップ。ブラウザ標準の title は表示までが遅いため、
+   短い遅延（.12s）で出る独自のツールチップにしている。中の .c-desc/.c-acct は省略表示のため
+   overflow:hidden なので、data-tip（吹き出し）はそれを包む .imp-tip 側に付けて、吹き出し自体が
+   一緒に切り取られないようにする */
+.imp-tip{position:relative;display:block;min-width:0}
+.imp-tip > span{display:block;min-width:0}
+[data-tip]{position:relative}
+[data-tip]::after{
+  content:attr(data-tip);position:absolute;left:0;bottom:100%;margin-bottom:6px;z-index:5;
+  max-width:320px;width:max-content;white-space:normal;font-size:12px;line-height:1.5;
+  background:#101828;color:#fff;padding:5px 9px;border-radius:7px;box-shadow:var(--shadow-lg);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .1s ease, visibility 0s linear .12s;
+}
+[data-tip]:hover::after,[data-tip]:focus-visible::after{
+  opacity:1;visibility:visible;transition-delay:.12s,0s;
+}
+.imp-head{position:sticky;top:0;z-index:1;background:var(--surface);height:36px;font-size:12px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border)}
+.imp-row2{min-height:40px;border-bottom:1px solid var(--border);font-size:13px}
+.imp-row2.dup{opacity:.55}
+.imp-tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.imp-tag.dup{background:var(--neg-soft);color:var(--neg)}
+.imp-tag.new{background:var(--pos-soft);color:var(--pos)}
+.imp-tag.pair{background:var(--accent-soft);color:var(--accent-text)}
+.imp-tag.pending{background:var(--flash);color:var(--warn)}
+.imp-undo{height:auto;padding:1px 8px;font-size:11px;font-weight:500}
+.imp-status{display:flex;flex-direction:row;align-items:center;gap:4px}
+
 </style>
 </head>
 <body>
@@ -443,6 +503,10 @@ form.busy{opacity:.6;pointer-events:none}
     <button type="button" class="nav-recent" id="navReport">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M9 19v-6M14 19v-9M19 19v-4"/></svg>
       損益計算書
+    </button>
+    <button type="button" class="nav-recent" id="navImport">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      取り込み
     </button>
     <div class="tree-tools">
       <label class="search">
@@ -532,6 +596,7 @@ const state = {
   txCache: {},           // 取引 GUID → /api/transactions/{guid} の結果
   drafts: {},            // 分割入力中の下書き（'new' = 新規、その他は取引 GUID）
   limit: PAGE,
+  imp: null,    // マネーフォワード取り込みの作業状態。null = まだファイル未選択
 };
 let A = {}, CHILDREN = {}, ROOTS = [], TOTAL = {};
 
@@ -862,8 +927,51 @@ const MOCK = (() => {
     return {guid: snapshot.guid};
   }
 
+  // ---- マネーフォワード ME 取り込み：科目マッピング・取り込み済みIDの永続化 ----
+  const IMPORT_MAP_KEY = 'gnucash-mock-import-map-v1';
+  const IMPORT_IDS_KEY = 'gnucash-mock-import-ids-v1';
+  function loadImportMap(){ try { const s = localStorage.getItem(IMPORT_MAP_KEY); const v = s ? JSON.parse(s) : null; return {inst: v?.inst || {}, cat: v?.cat || {}, desc: v?.desc || {}}; } catch (e) { return {inst: {}, cat: {}, desc: {}}; } }
+  let IMPORT_MAP = loadImportMap();
+  function persistImportMap(){ try { localStorage.setItem(IMPORT_MAP_KEY, JSON.stringify(IMPORT_MAP)); } catch (e) {} }
+  function loadImportedIds(){ try { const s = localStorage.getItem(IMPORT_IDS_KEY); return new Set(s ? JSON.parse(s) : []); } catch (e) { return new Set(); } }
+  let IMPORTED_IDS = loadImportedIds();
+  function persistImportedIds(){ try { localStorage.setItem(IMPORT_IDS_KEY, JSON.stringify([...IMPORTED_IDS])); } catch (e) {} }
+
+  function importMappings(){ return {inst: {...IMPORT_MAP.inst}, cat: {...IMPORT_MAP.cat}, desc: {...IMPORT_MAP.desc}}; }
+  function saveImportMapping(kind, key, accountGuid){
+    const a = checkAccount(accountGuid);
+    if (a.placeholder) err(400, `集計用（プレースホルダ）の科目「${a.name}」は選べません`);
+    if (kind === 'inst') IMPORT_MAP.inst[key] = accountGuid;
+    else if (kind === 'cat') IMPORT_MAP.cat[key] = accountGuid;
+    else if (kind === 'desc') IMPORT_MAP.desc[key] = accountGuid;
+    else err(400, '種類が正しくありません');
+    persistImportMap();
+    return {ok: true};
+  }
+  function deleteImportMapping(kind, key){
+    if (kind !== 'inst' && kind !== 'cat' && kind !== 'desc') err(400, '種類が正しくありません');
+    delete IMPORT_MAP[kind][key];
+    persistImportMap();
+    return {ok: true};
+  }
+  function importedIdList(){ return [...IMPORTED_IDS]; }
+  // items: [{date, desc, splits:[{account, memo, amount}, {account, memo, amount}], ids:[CSVのID,...]}]
+  // 1件ずつ既存の create() を通す（貸借チェック等をそのまま再利用する）ので、ID は split 2行の通常取引として記録される
+  function commitImport(items){
+    let created = 0;
+    for (const it of items) {
+      if (it.ids.every(id => IMPORTED_IDS.has(id))) continue;   // 二重送信の保険
+      create({date: it.date, desc: it.desc, splits: it.splits});
+      created++;
+      for (const id of it.ids) IMPORTED_IDS.add(id);
+    }
+    persistImportedIds();
+    return {created};
+  }
+
   return {book, register, recent, quickfill, quickfillPair, create, update, copy, del, restore, txPayload, findTx,
-           createAccount, updateAccount, deleteAccount, incomeStatement};
+           createAccount, updateAccount, deleteAccount, incomeStatement,
+           importMappings, saveImportMapping, deleteImportMapping, importedIdList, commitImport};
 })();
 
 /* ---------- API（疑似バックエンド呼び出し） ---------- */
@@ -886,6 +994,11 @@ async function api(method, url, body){
     }
     if (method === 'GET' && path === '/api/recent') return MOCK.recent(parseInt(q.get('days') || '7', 10));
     if (method === 'GET' && path === '/api/reports/income-statement') return MOCK.incomeStatement(q.get('from') || '', q.get('to') || '');
+    if (method === 'GET' && path === '/api/import/mappings') return MOCK.importMappings();
+    if (method === 'POST' && path === '/api/import/mappings') return MOCK.saveImportMapping(body.kind, body.key, body.account);
+    if (method === 'DELETE' && path === '/api/import/mappings') return MOCK.deleteImportMapping(body.kind, body.key);
+    if (method === 'GET' && path === '/api/import/ids') return {ids: MOCK.importedIdList()};
+    if (method === 'POST' && path === '/api/import/commit') return MOCK.commitImport(body.items);
     if (method === 'POST' && path === '/api/transactions') return MOCK.create(body);
     m = path.match(/^\/api\/transactions\/([0-9a-f]+)\/copy$/);
     if (method === 'POST' && m) return MOCK.copy(m[1], body);
@@ -974,6 +1087,236 @@ function reportRange(preset, today, customFrom, customTo){
   }
 }
 
+/* ---------- マネーフォワード ME 取り込み ----------
+   CSV（計算対象,日付,内容,金額（円）,保有金融機関,大項目,中項目,メモ,振替,ID）を解析し、
+   「保有金融機関→資産/負債科目」のマッピングと、相手科目のマッピングで取引に変換する。
+   相手科目は ①振替（他のMF連携口座との資産/負債間の移動）行どうしを同じファイル内で
+   日付・金額の絶対値が同じ・符号が逆で自動ペアリングした相手の保有金融機関 ②「保有金融機関＋内容
+   （メモが入力されている行はメモも含めて完全一致）」のマッピング（desc。同じカテゴリでも実際の支払先が
+   複数混在する場合に個別指定するため。メモ違いは別項目として扱う）
+   ③大項目/中項目のマッピング（cat。①②が無い場合のカテゴリ全体の既定） の優先順位で解決する。
+   振替ペアが見つからない場合（月をまたぐ振替や、連携先がMF未追跡の場合など、実データ上よくある）は
+   通常行と同様に②③で解決する */
+async function decodeMfFile(file){
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  const hasBom = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
+  const tryDecode = enc => { try { return new TextDecoder(enc, {fatal: false}).decode(buf); } catch (e) { return null; } };
+  const looksBad = s => !s || (s.match(/�/g) || []).length > s.length / 50;   // 文字化けの簡易検出
+  if (hasBom) return tryDecode('utf-8') || '';
+  const sjis = tryDecode('shift_jis');
+  if (sjis && !looksBad(sjis)) return sjis;
+  const utf8 = tryDecode('utf-8');
+  if (utf8 && !looksBad(utf8)) return utf8;
+  return sjis || utf8 || '';
+}
+// ダブルクオート内のカンマ・改行・""エスケープに対応した最低限の CSV パーサー
+function parseCsv(text){
+  const rows = []; let row = [], field = '', inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+      else field += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+const MF_NEED_COLS = ['日付', '内容', '金額（円）', '保有金融機関', '大項目', '中項目', '振替', 'ID'];
+function parseMfCsv(text){
+  const table = parseCsv(text.replace(/^﻿/, ''));
+  if (!table.length) throw new Error('CSVが空です');
+  const header = table[0];
+  const idx = name => header.indexOf(name);
+  for (const n of MF_NEED_COLS) if (idx(n) < 0) throw new Error(`CSVの形式が想定と異なります（列「${n}」が見つかりません）`);
+  const iDate = idx('日付'), iDesc = idx('内容'), iAmt = idx('金額（円）'), iInst = idx('保有金融機関'),
+        iMajor = idx('大項目'), iMinor = idx('中項目'), iMemo = idx('メモ'), iFuri = idx('振替'), iId = idx('ID');
+  return table.slice(1).filter(r => r.length > 1 || r[0]).map(r => ({
+    date: (r[iDate] || '').trim().replace(/\//g, '-'),
+    desc: (r[iDesc] || '').trim(),
+    amount: parseInt(r[iAmt], 10) || 0,
+    inst: (r[iInst] || '').trim(),
+    major: (r[iMajor] || '').trim(), minor: (r[iMinor] || '').trim(),
+    memo: (r[iMemo] || '').trim(),
+    furikae: r[iFuri] === '1',
+    id: (r[iId] || '').trim(),
+  }));
+}
+const catKey = (major, minor) => `${major}|||${minor}`;
+// メモが入力されている行は、メモも含めて完全一致した場合だけ同一項目とみなす
+// （メモが空の行は従来通り「保有金融機関＋内容」のみで一致を判定し、既存のマッピングと互換を保つ）
+const descKey = (inst, desc, memo) => memo ? `${inst}|||${desc}|||${memo}` : `${inst}|||${desc}`;
+// 振替行どうしを「日付・金額の絶対値が同じ・符号が逆」でグリーディにペアリングする（1行は1回だけ使う）
+function pairTransfers(rows){
+  const furi = rows.map((r, i) => i).filter(i => rows[i].furikae);
+  const used = new Set(), pairs = {};
+  for (let a = 0; a < furi.length; a++) {
+    const i = furi[a]; if (used.has(i)) continue;
+    for (let b = a + 1; b < furi.length; b++) {
+      const j = furi[b]; if (used.has(j)) continue;
+      if (rows[i].date === rows[j].date && rows[i].amount !== 0 && rows[i].amount === -rows[j].amount) {
+        pairs[i] = j; pairs[j] = i; used.add(i); used.add(j); break;
+      }
+    }
+  }
+  return pairs;
+}
+// rows・マッピング・取り込み済みID から、各行に instAcct（自分の保有金融機関の科目）・
+// otherAcct（相手科目）を解決して付与する。相手科目の優先順位は
+// ①振替ペア成立ならその保有金融機関 ②「保有金融機関＋内容」（メモが入力されていればメモも含めて完全一致）
+// のマッピング（desc） ③大項目/中項目のマッピング（cat、①②が無い場合のグループ既定としてのフォールバック）
+function buildImportPlan(rows, mappings, importedIds){
+  const pairs = pairTransfers(rows);
+  const instCount = new Map(), instAmount = new Map(), catGroups = new Map();
+  const bumpInst = (name, amount) => { instCount.set(name, (instCount.get(name) || 0) + 1); instAmount.set(name, amount); };
+  const plan = rows.map((r, i) => {
+    const dup = importedIds.has(r.id);
+    const instAcct = mappings.inst[r.inst] || null;
+    if (!instAcct) bumpInst(r.inst, r.amount);
+    const pairIdx = pairs[i];
+    let otherAcct, otherLabel, paired = false;
+    const undo = [];
+    if (instAcct) undo.push({kind: 'inst', key: r.inst});
+    if (pairIdx !== undefined) {
+      paired = true;
+      const other = rows[pairIdx];
+      otherAcct = mappings.inst[other.inst] || null;
+      otherLabel = other.inst;
+      if (otherAcct) undo.push({kind: 'inst', key: other.inst});
+    } else {
+      const dKey = descKey(r.inst, r.desc, r.memo), cKey = catKey(r.major, r.minor);
+      const dAcct = mappings.desc[dKey] || null;
+      otherAcct = dAcct || mappings.cat[cKey] || null;
+      otherLabel = dAcct ? `${r.inst} / ${r.desc}${r.memo ? ' / ' + r.memo : ''}` : `${r.major} / ${r.minor}`;
+      if (dAcct) undo.push({kind: 'desc', key: dKey});
+      else if (otherAcct) undo.push({kind: 'cat', key: cKey});
+      if (!otherAcct) {
+        // カテゴリ全体が未解決（既定も個別指定も無い）行だけを、グループ内の
+        // 未解決サブ項目（保有金融機関＋内容。メモが入力されていればメモも含めて区別）とともに集計する
+        let g = catGroups.get(cKey);
+        if (!g) { g = {key: cKey, major: r.major, minor: r.minor, count: 0, subs: new Map()}; catGroups.set(cKey, g); }
+        g.count++; g.amount = r.amount;
+        let s = g.subs.get(dKey);
+        if (!s) { s = {key: dKey, inst: r.inst, desc: r.desc, memo: r.memo, count: 0}; g.subs.set(dKey, s); }
+        s.count++; s.amount = r.amount;
+      }
+    }
+    return {...r, idx: i, dup, instAcct, otherAcct, otherLabel, paired, pairIdx, undo};
+  });
+  return {
+    plan,
+    instUnmapped: [...instCount.entries()].map(([name, count]) => ({name, count, amount: count === 1 ? instAmount.get(name) : null})),
+    catUnmapped: [...catGroups.values()].map(g => ({...g, subs: [...g.subs.values()].sort((a, b) => b.count - a.count)})),
+  };
+}
+// 確定した plan から、実際に作成する取引（2行split）の配列を組み立てる。
+// 振替ペアは1組につき1件だけ作成し、ペアの両方の CSV ID を取り込み済みとして記録する
+function buildCommitItems(plan){
+  const items = [], done = new Set();
+  for (const r of plan) {
+    if (r.dup || done.has(r.idx) || !r.instAcct || !r.otherAcct) continue;
+    if (r.paired) {
+      const other = plan[r.pairIdx];
+      if (!other || other.dup || !other.instAcct) continue;
+      done.add(r.idx); done.add(other.idx);
+      items.push({date: r.date, desc: r.desc || other.desc, splits: [
+        {account: r.instAcct, memo: r.memo, amount: String(r.amount)},
+        {account: other.instAcct, memo: other.memo, amount: String(other.amount)}], ids: [r.id, other.id]});
+    } else {
+      done.add(r.idx);
+      items.push({date: r.date, desc: r.desc, splits: [
+        {account: r.instAcct, memo: r.memo, amount: String(r.amount)},
+        {account: r.otherAcct, memo: '', amount: String(-r.amount)}], ids: [r.id]});
+    }
+  }
+  return items;
+}
+async function handleImportFile(file){
+  state.imp = {fileName: file.name, loading: true};
+  render();
+  try {
+    const text = await decodeMfFile(file);
+    const rows = parseMfCsv(text);
+    if (!rows.length) throw new Error('取り込める行がありません');
+    const [mappings, idsRes] = await Promise.all([api('GET', '/api/import/mappings'), api('GET', '/api/import/ids')]);
+    const importedSet = new Set(idsRes.ids);
+    const {plan, instUnmapped, catUnmapped} = buildImportPlan(rows, mappings, importedSet);
+    state.imp = {fileName: file.name, rows, mappings, importedSet, plan, instUnmapped, catUnmapped, result: null};
+  } catch (e) {
+    state.imp = {fileName: file.name, error: e.message};
+  }
+  render();
+}
+async function refreshImportPlan(){
+  if (!state.imp?.rows) return;
+  const mappings = await api('GET', '/api/import/mappings');
+  const {plan, instUnmapped, catUnmapped} = buildImportPlan(state.imp.rows, mappings, state.imp.importedSet);
+  state.imp = {...state.imp, mappings, plan, instUnmapped, catUnmapped};
+  render();
+}
+async function saveInstMapping(name, text){
+  const acct = resolveAccount(text);
+  if (!acct) return toast('一覧から勘定科目を選んでください');
+  try {
+    await api('POST', '/api/import/mappings', {kind: 'inst', key: name, account: acct});
+    if (state.imp?.drafts) delete state.imp.drafts['inst:' + name];
+    await refreshImportPlan();
+  } catch (e) { toast(e.message); }
+}
+// 「新規」になった行の「取消」ボタン用。その行を解決したマッピング（保有金融機関・内容・カテゴリ既定）を
+// まとめて削除し、未設定の状態に戻す（同じマッピングを使う他の行も合わせて未設定に戻る点は、
+// 都度「2.」「3.」側で案内している）
+async function undoRowMapping(targets){
+  try {
+    for (const t of targets) await api('DELETE', '/api/import/mappings', {kind: t.kind, key: t.key});
+    await refreshImportPlan();
+  } catch (e) { toast(e.message); }
+}
+async function saveCatMapping(key, text){
+  const acct = resolveAccount(text);
+  if (!acct) return toast('一覧から勘定科目を選んでください');
+  try {
+    await api('POST', '/api/import/mappings', {kind: 'cat', key, account: acct});
+    if (state.imp?.drafts) delete state.imp.drafts['cat:' + key];
+    await refreshImportPlan();
+  } catch (e) { toast(e.message); }
+}
+async function saveDescMapping(key, text){
+  const acct = resolveAccount(text);
+  if (!acct) return toast('一覧から勘定科目を選んでください');
+  try {
+    await api('POST', '/api/import/mappings', {kind: 'desc', key, account: acct});
+    if (state.imp?.drafts) delete state.imp.drafts['desc:' + key];
+    await refreshImportPlan();
+  }
+  catch (e) { toast(e.message); }
+}
+async function commitImportPlan(){
+  const imp = state.imp;
+  if (!imp?.plan) return;
+  const items = buildCommitItems(imp.plan);
+  const dupCount = imp.plan.filter(r => r.dup).length;
+  if (!items.length) { toast(dupCount ? `取り込める新しい行がありません（${dupCount}件は重複）` : '取り込める行がありません'); return; }
+  try {
+    const res = await api('POST', '/api/import/commit', {items});
+    const idsRes = await api('GET', '/api/import/ids');
+    imp.importedSet = new Set(idsRes.ids);
+    imp.plan = buildImportPlan(imp.rows, imp.mappings, imp.importedSet).plan;
+    await refresh();
+    const pendingCount = imp.instUnmapped.reduce((n, u) => n + u.count, 0) + imp.catUnmapped.reduce((n, g) => n + g.count, 0);
+    const notes = [dupCount ? `${dupCount}件は重複のためスキップ` : '', pendingCount ? `${pendingCount}件は科目未設定のため保留` : ''].filter(Boolean).join('、');
+    toast(`${res.created}件取り込みました${notes ? `（${notes}）` : ''}`);
+  } catch (e) { toast(e.message); }
+}
+
 /* ---------- サイドバー ---------- */
 function renderSidebar(){
   const b = state.book;
@@ -1000,6 +1343,7 @@ function renderSidebar(){
 
   document.getElementById('navRecent').classList.toggle('on', state.view === 'recent');
   document.getElementById('navReport').classList.toggle('on', state.view === 'report');
+  document.getElementById('navImport').classList.toggle('on', state.view === 'import');
   const R = state.recent;
   document.getElementById('recentCnt').textContent = R ? `${RECENT_PERIODS.find(x => x[0] === R.days)?.[1] ?? R.days + '日'} ${R.rows.length}` : '';
 
@@ -1041,6 +1385,7 @@ function renderSidebar(){
 function renderMain(){
   if (state.view === 'recent') return renderRecent();
   if (state.view === 'report') return renderReport();
+  if (state.view === 'import') return renderImport();
   const main = document.getElementById('main');
   const id = state.selected;
   if (!id) { main.innerHTML = '<div class="loading">左の一覧から勘定科目を選んでください</div>'; return; }
@@ -1387,7 +1732,7 @@ function render({scrollBottom = false, anchor = null} = {}){
   // 画面の種類に合わせて URL を同期する（最近の取引なら BASE#recent、それ以外なら BASE）。
   // 静的ホスティングでも再読み込みできるよう、パスではなくハッシュで切り替える。
   // 履歴を汚さないよう pushState ではなく replaceState を使う
-  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : '');
+  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : state.view === 'import' ? '#import' : '');
   // file:// や data: で開くとドキュメントの origin が null になり replaceState が
   // SecurityError を投げることがある。URL同期に失敗しても描画自体は続行する
   if (location.pathname + location.search + location.hash !== url) {
@@ -1395,7 +1740,7 @@ function render({scrollBottom = false, anchor = null} = {}){
   }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
-  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.selected;
+  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   renderSidebar();
@@ -1639,6 +1984,14 @@ async function changeReportRange(){
   if (state.view === 'report') render();
 }
 
+function openImport(){
+  state.view = 'import'; state.editing = null; state.q = '';
+  state.drafts = {}; state.openSplits.clear();
+  app.classList.add('show-main');
+  render();
+}
+document.getElementById('navImport').onclick = () => openImport();
+
 // 出金元（貸方）→ 入金先（借方）。分割取引は片側が 1 科目ならその科目を出す
 function pairOf(tx){
   const sp = tx.splits;
@@ -1835,6 +2188,102 @@ function renderReport(){
         <div class="rep-net ${net<0?'neg':''}"><span>純利益</span><span class="num">${money(net, bookCommodity())}</span></div>
       </div>
     </div>`;
+}
+
+/* ---------- マネーフォワード ME 取り込み ---------- */
+function renderImport(){
+  const main = document.getElementById('main');
+  const header = `
+    <div class="header"><div>
+      <button class="back" data-back>‹ 勘定科目一覧</button>
+      <h1 class="title">マネーフォワード ME 取り込み</h1>
+      <div class="desc">家計簿画面の「ダウンロード」から取得したCSV（入出金）を取り込んで取引を記録します</div>
+    </div></div>`;
+
+  if (!canWrite()) {
+    main.innerHTML = header + `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため取り込めません' : 'GnuCash デスクトップのロック中のため取り込めません'}</div>`;
+    return;
+  }
+
+  const imp = state.imp;
+  let body = `
+    <div class="card">
+      <div class="scroll" id="scroll" data-account="__import">
+      <div class="imp-section">
+        <h3>1. CSVファイルを選択</h3>
+        <label class="imp-drop">
+          マネーフォワード MEの「家計簿」画面 → ダウンロード で取得したCSVを選んでください（Shift_JIS・UTF-8のどちらでも構いません）
+          <input type="file" accept=".csv" id="impFile" aria-label="CSVファイルを選択">
+        </label>
+        ${imp?.fileName ? `<div class="hint" style="margin-top:8px">選択中のファイル: ${esc(imp.fileName)}${imp.loading ? '（読み込み中…）' : ''}
+          ${imp && !imp.loading ? ' <button type="button" class="btn ghost" data-imp-reset style="height:auto;padding:0 6px">やり直す</button>' : ''}</div>` : ''}
+        ${imp?.error ? `<div class="msg" style="margin-top:8px">${esc(imp.error)}</div>` : ''}
+      </div>`;
+
+  if (imp?.plan) {
+    const newCount = imp.plan.filter(r => !r.dup).length, dupCount = imp.plan.length - newCount;
+    const readyIds = new Set(buildCommitItems(imp.plan).flatMap(it => it.ids));
+    const readyCount = imp.plan.filter(r => !r.dup && readyIds.has(r.id)).length;
+    const pendingCount = newCount - readyCount;
+    if (imp.instUnmapped.length) {
+      body += `
+      <div class="imp-section">
+        <h3>2. 保有金融機関 → 勘定科目</h3>
+        ${imp.instUnmapped.map(u => `
+          <div class="imp-map-row" data-map-inst="${esc(u.name)}">
+            <div class="lbl"><b>${esc(u.name)}</b><span>${u.count} 行${u.count === 1 ? ' ・ ' + money(u.amount, bookCommodity()) : ''}</span></div>
+            <input class="f" placeholder="勘定科目を選択" list="acctListAll" autocomplete="off" value="${esc(imp.drafts?.['inst:' + u.name] || '')}">
+            <button type="button" class="btn" data-map-save>保存</button>
+          </div>`).join('')}
+      </div>`;
+    }
+    if (imp.catUnmapped.length) {
+      body += `
+      <div class="imp-section">
+        <h3>3. カテゴリの割り当て</h3>
+        <div class="hint" style="display:block;margin-bottom:6px">大項目 / 中項目 → 勘定科目（同じカテゴリでも実際の相手が異なる場合は、下の「保有金融機関・内容」ごとに個別指定できます）</div>
+        ${imp.catUnmapped.map(u => `
+          <div class="imp-cat-group">
+            <div class="imp-map-row" data-map-cat="${esc(u.key)}">
+              <div class="lbl"><b>${esc(u.major)} / ${esc(u.minor)}</b><span>${u.count} 行${u.count === 1 ? ' ・ ' + money(u.amount, bookCommodity()) : ''}（下で個別指定しない分の既定）</span></div>
+              <input class="f" placeholder="既定の勘定科目" list="acctListAll" autocomplete="off" value="${esc(imp.drafts?.['cat:' + u.key] || '')}">
+              <button type="button" class="btn" data-map-save>保存</button>
+            </div>
+            <div class="imp-sub-list">
+              ${u.subs.map(s => `
+                <div class="imp-map-row" data-map-desc="${esc(s.key)}">
+                  <div class="lbl"><b>${esc(s.inst)}</b><span>${esc(s.desc)}${s.memo ? ' ・ メモ: ' + esc(s.memo) : ''} ・ ${s.count} 行${s.count === 1 ? ' ・ ' + money(s.amount, bookCommodity()) : ''}</span></div>
+                  <input class="f" placeholder="個別に指定（任意）" list="acctListAll" autocomplete="off" value="${esc(imp.drafts?.['desc:' + s.key] || '')}">
+                  <button type="button" class="btn ghost" data-map-save>保存</button>
+                </div>`).join('')}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    }
+    body += `
+      <div class="imp-section" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <h3 style="margin:0">4. 内容を確認して取り込む</h3>
+        <span class="badge">取込可 ${readyCount} 件</span>
+        ${pendingCount ? `<span class="badge">保留（科目未設定） ${pendingCount} 件</span>` : ''}
+        ${dupCount ? `<span class="badge">重複（スキップ） ${dupCount} 件</span>` : ''}
+        <span class="spacer"></span>
+        <button type="button" class="btn primary" id="impCommit" ${readyCount ? '' : 'disabled'}>取り込む</button>
+      </div>
+      ${pendingCount ? `<div class="hint" style="display:block;margin:0 20px 8px">科目が未設定の行は今回取り込まれません。上の「2.」「3.」で設定するか、後で改めて取り込めます。</div>` : ''}
+      <div class="imp-grid imp-head"><span>日付</span><span>内容</span><span>口座</span><span>相手</span><span class="r">金額</span><span>状態</span></div>
+      ${imp.plan.map(r => `<div class="imp-grid imp-row2 ${r.dup?'dup':''}">
+          <span class="num">${esc(r.date)}</span>
+          <span class="imp-tip" data-tip="${esc(r.desc)}"><span class="c-desc">${esc(r.desc)}</span></span>
+          <span class="imp-tip" data-tip="${esc(r.instAcct ? fullName(r.instAcct) : r.inst)}"><span class="c-acct">${r.instAcct ? esc(fullName(r.instAcct)) : `<span class="imp-tag">${esc(r.inst)}</span>`}</span></span>
+          <span class="imp-tip" data-tip="${esc(r.otherAcct ? fullName(r.otherAcct) : r.otherLabel)}"><span class="c-acct">${r.otherAcct ? esc(fullName(r.otherAcct)) : `<span class="imp-tag">${esc(r.otherLabel)}</span>`}${r.paired ? ' <span class="imp-tag pair">振替ペア</span>' : ''}</span></span>
+          <span class="r num ${r.amount<0?'neg':''}">${money(r.amount, bookCommodity())}</span>
+          <span class="imp-status">${r.dup ? '<span class="imp-tag dup">重複</span>' : readyIds.has(r.id)
+            ? `<span class="imp-tag new">新規</span><button type="button" class="btn ghost imp-undo" data-row-unmap="${r.idx}" title="この行を解決した割り当てを取り消して未設定に戻します">取消</button>`
+            : '<span class="imp-tag pending">保留</span>'}</span>
+        </div>`).join('')}`;
+  }
+  body += `</div></div>`;
+  main.innerHTML = header + body;
 }
 
 // 最近の取引一覧部分の HTML だけを組み立てる（検索中の絞り込み更新でヘッダーごと作り直さずに済むように分離）
@@ -2133,6 +2582,16 @@ function clearSearch(input){
   (input.id ? document.getElementById(input.id) : input)?.focus();
   return true;
 }
+// 取り込み画面の科目マッピング欄は、他の行を保存して再描画されても入力中の文字が消えないよう、
+// 1文字ごとに state に退避しておく（保存できた行の分だけ saveXxxMapping 側で破棄する）
+document.addEventListener('input', e => {
+  const row = e.target.closest?.('.imp-map-row');
+  if (!row || !state.imp) return;
+  const key = row.dataset.mapInst !== undefined ? 'inst:' + row.dataset.mapInst
+    : row.dataset.mapCat !== undefined ? 'cat:' + row.dataset.mapCat
+    : row.dataset.mapDesc !== undefined ? 'desc:' + row.dataset.mapDesc : null;
+  if (key) (state.imp.drafts ??= {})[key] = e.target.value;
+});
 document.addEventListener('click', e => {
   const btn = e.target.closest('[data-clear]');
   if (btn) clearSearch(btn.parentElement.querySelector('input'));
@@ -2156,6 +2615,22 @@ main.addEventListener('click', e => {
   const go = t.closest('[data-go]'); if (go) return select(go.dataset.go);
   const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; state.limit = PAGE; render({scrollBottom: true}); return; }
   const rpp = t.closest('[data-report-preset]'); if (rpp) return changeReportPreset(rpp.dataset.reportPreset);
+  if (t.closest('[data-imp-reset]')) { state.imp = null; render(); return; }
+  if (t.closest('#impCommit')) return commitImportPlan();
+  const mapSave = t.closest('[data-map-save]');
+  if (mapSave) {
+    const row = mapSave.closest('.imp-map-row'), input = row.querySelector('input');
+    if (row.dataset.mapInst !== undefined) return saveInstMapping(row.dataset.mapInst, input.value);
+    if (row.dataset.mapCat !== undefined) return saveCatMapping(row.dataset.mapCat, input.value);
+    if (row.dataset.mapDesc !== undefined) return saveDescMapping(row.dataset.mapDesc, input.value);
+    return;
+  }
+  const rowUnmap = t.closest('[data-row-unmap]');
+  if (rowUnmap) {
+    const row = state.imp?.plan?.[Number(rowUnmap.dataset.rowUnmap)];
+    if (row) return undoRowMapping(row.undo);
+    return;
+  }
   if (t.closest('[data-more]')) {
     const sc = document.getElementById('scroll'), h = sc.scrollHeight;
     state.limit += 1000; render(); sc.scrollTop = document.getElementById('scroll').scrollHeight - h; return;
@@ -2274,6 +2749,7 @@ main.addEventListener('input', e => {
   updatePreview(f);
 });
 main.addEventListener('change', e => {
+  if (e.target.id === 'impFile') { const f = e.target.files[0]; if (f) handleImportFile(f); return; }
   if (e.target.id === 'reportFrom') { state.reportFrom = e.target.value; changeReportRange(); return; }
   if (e.target.id === 'reportTo') { state.reportTo = e.target.value; changeReportRange(); return; }
   if (e.target.name !== 'desc') return;
@@ -2456,6 +2932,7 @@ async function boot(){
   // #recent（または旧形式の /recent）で開いた場合は「最近の取引」画面を直接表示する（ホーム画面への追加用のエントリーポイント）
   if (location.hash === '#recent' || /\/recent\/?$/.test(location.pathname)) return openRecent();
   if (location.hash === '#report' || /\/report\/?$/.test(location.pathname)) return openReport();
+  if (location.hash === '#import' || /\/import\/?$/.test(location.pathname)) return openImport();
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])

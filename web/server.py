@@ -24,6 +24,7 @@ import shutil
 import signal
 import sqlite3
 import sys
+import threading
 import uuid
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -90,6 +91,7 @@ class Book:
         self.path = path
         self.writable = writable
         self.force = force
+        self._mf_lock = threading.Lock()
 
     def connect(self):
         if self.writable:
@@ -740,6 +742,96 @@ class Book:
                                 [row[k] for k in keys])
         return {"guid": snap["transaction"]["guid"]}
 
+    # ---- マネーフォワード ME 取り込み：科目マッピング・取り込み済みIDの永続化
+    # GnuCash の SQLite とは別に、同じフォルダの mf-import.json に保存する（auth.json と同じ置き場所の流儀）。
+    # CSVの解析・振替の突き合わせ・マッピング適用はフロント側（JS）で行い、ここではマッピングの保存と、
+    # フロントが組み立てた取引（2行split）の一括作成・取り込み済みID の記録だけを受け持つ
+
+    def _mf_import_path(self):
+        return Path(self.path).parent / "mf-import.json"
+
+    def _load_mf_import(self):
+        p = self._mf_import_path()
+        if not p.exists():
+            return {"inst": {}, "cat": {}, "desc": {}, "ids": []}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"inst": {}, "cat": {}, "desc": {}, "ids": []}
+        return {"inst": data.get("inst") or {}, "cat": data.get("cat") or {}, "desc": data.get("desc") or {},
+                "ids": data.get("ids") or []}
+
+    def _save_mf_import(self, data):
+        p = self._mf_import_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+
+    def mf_import_mappings(self):
+        with self._mf_lock:
+            d = self._load_mf_import()
+        return {"inst": d["inst"], "cat": d["cat"], "desc": d["desc"]}
+
+    def mf_import_ids(self):
+        with self._mf_lock:
+            d = self._load_mf_import()
+        return {"ids": d["ids"]}
+
+    def mf_set_mapping(self, kind, key, account_guid):
+        """保有金融機関（inst）・カテゴリ（cat）・内容（desc、保有金融機関+内容の完全一致）
+        1件分のマッピング先勘定科目を保存する。"""
+        if kind not in ("inst", "cat", "desc"):
+            raise ApiError(400, "種類が正しくありません")
+        if not key or not isinstance(key, str):
+            raise ApiError(400, "キーが正しくありません")
+        with self.connect() as con:
+            a = self._account(con, account_guid)
+            if a["placeholder"]:
+                raise ApiError(400, f"集計用（プレースホルダ）の科目「{a['name']}」は選べません")
+        with self._mf_lock:
+            d = self._load_mf_import()
+            d[kind][key] = account_guid
+            self._save_mf_import(d)
+        return {"ok": True}
+
+    def mf_delete_mapping(self, kind, key):
+        """mf_set_mapping で保存したマッピングを取り消す（未設定に戻す）。"""
+        if kind not in ("inst", "cat", "desc"):
+            raise ApiError(400, "種類が正しくありません")
+        if not key or not isinstance(key, str):
+            raise ApiError(400, "キーが正しくありません")
+        with self._mf_lock:
+            d = self._load_mf_import()
+            d[kind].pop(key, None)
+            self._save_mf_import(d)
+        return {"ok": True}
+
+    def mf_import_commit(self, items):
+        """フロントで組み立てた取引（{date, desc, splits:[...], ids:[...]}）を順に作成する。
+        ids が既に取り込み済みの行はスキップする。1件失敗した時点でそれまでの分の ID は記録して中断する
+        （次回の再取り込みで同じ行を二重に作成しないため）。"""
+        if not isinstance(items, list) or not items:
+            raise ApiError(400, "取り込む行がありません")
+        with self._mf_lock:
+            d = self._load_mf_import()
+            imported = set(d["ids"])
+            created = 0
+            try:
+                for it in items:
+                    ids = it.get("ids") or []
+                    if not ids:
+                        raise ApiError(400, "IDのない行があります")
+                    if all(i in imported for i in ids):
+                        continue
+                    self.create({"date": it.get("date"), "desc": it.get("desc", ""), "splits": it.get("splits")})
+                    created += 1
+                    imported.update(ids)
+            finally:
+                d["ids"] = sorted(imported)
+                self._save_mf_import(d)
+        return {"created": created}
+
 
 # ---------------------------------------------------------------- HTTP
 
@@ -817,6 +909,18 @@ class Handler(BaseHTTPRequestHandler):
             if not frm or not to:
                 raise ApiError(400, "from・to が必要です")
             return self._send(200, b.income_statement(frm, to))
+        if method == "GET" and p == "/api/mf-import/mappings":
+            return self._send(200, b.mf_import_mappings())
+        if method == "POST" and p == "/api/mf-import/mappings":
+            body = self._body()
+            return self._send(200, b.mf_set_mapping(body.get("kind"), body.get("key"), body.get("account")))
+        if method == "DELETE" and p == "/api/mf-import/mappings":
+            body = self._body()
+            return self._send(200, b.mf_delete_mapping(body.get("kind"), body.get("key")))
+        if method == "GET" and p == "/api/mf-import/ids":
+            return self._send(200, b.mf_import_ids())
+        if method == "POST" and p == "/api/mf-import/commit":
+            return self._send(201, b.mf_import_commit(self._body().get("items")))
         if method == "POST" and p == "/api/transactions":
             return self._send(201, b.create(self._body()))
         m = re.fullmatch(r"/api/transactions/([0-9a-f]{32})/copy", p)
