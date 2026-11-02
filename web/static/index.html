@@ -503,6 +503,23 @@ form.busy{opacity:.6;pointer-events:none}
 .imp-undo{height:auto;padding:1px 8px;font-size:11px;font-weight:500}
 .imp-status{display:flex;flex-direction:row;align-items:center;gap:4px}
 
+/* 統計・グラフ */
+/* ラベル付きの開始年月・終了年月（.fl）とラベル無しの検索欄・追加ボタンが並ぶため、
+   中央揃えだとラベルの分だけ検索欄・ボタンが高い位置にずれる。下端で揃える */
+.stats-toolbar{align-items:flex-end}
+.stats-card{padding:16px 20px 20px}
+.stats-legend{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.stats-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 6px 4px 10px;border-radius:999px;background:var(--surface-2);font-size:12.5px}
+.stats-chip .dot{width:9px;height:9px;border-radius:50%;flex:none}
+.stats-chip .tag{font-size:11px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:1px 7px}
+.stats-chip .x{border:0;background:none;cursor:pointer;color:var(--faint);width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:12px;line-height:1}
+.stats-chip .x:hover{background:var(--hover);color:var(--text)}
+.stats-chart{position:relative;overflow:visible}
+.stats-pt{cursor:pointer}
+.stats-tooltip{position:absolute;transform:translate(-50%,-100%) translateY(-8px);background:#101828;color:#fff;font-size:12px;
+  line-height:1.5;padding:5px 9px;border-radius:7px;box-shadow:var(--shadow-lg);white-space:nowrap;pointer-events:none;z-index:5}
+.stats-empty{padding:40px 20px;text-align:center;color:var(--muted)}
+
 </style>
 </head>
 <body>
@@ -526,6 +543,10 @@ form.busy{opacity:.6;pointer-events:none}
     <button type="button" class="nav-recent" id="navImport">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
       取り込み
+    </button>
+    <button type="button" class="nav-recent" id="navStats">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 15l5-5 4 4 7-7"/></svg>
+      統計・グラフ
     </button>
     <div class="tree-tools">
       <label class="search">
@@ -613,6 +634,7 @@ const state = {
   drafts: {},            // 分割入力中の下書き（'new' = 新規、その他は取引 GUID）
   limit: PAGE,
   imp: null,              // マネーフォワード ME 取り込み画面の状態
+  stats: null,            // 統計・グラフ画面の状態 {from, to, selected, data}。null = まだ開いていない
 };
 let A = {}, CHILDREN = {}, ROOTS = [], TOTAL = {};
 
@@ -714,6 +736,34 @@ function reportPeriodLabel(preset, range){
   return REPORT_SINGLE_MONTH_PRESETS.has(preset) ? ym(range.from) : `${ym(range.from)} - ${ym(range.to)}`;
 }
 
+/* ---------- 統計・グラフ ---------- */
+// 「純資産（資産－負債）」は実際の科目ではなく合計の疑似シリーズとして扱う
+const NETWORTH_ID = '__networth__';
+const statsLabel = id => id === NETWORTH_ID ? '純資産（資産－負債）' : fullName(id);
+// 科目の種類から「残高推移（資産・負債）」か「月次収支の推移（収益・費用）」かを判定する
+const isBalanceAccount = id => id === NETWORTH_ID ? true : !!TYPES[A[id]?.type]?.group;
+// id の値（own）を、その子孫のうち commodity が親と一致するものだけ合算してロールアップする。
+// loadBook() で現在残高を TOTAL に集計するのと同じ考え方を、任意の月の値（ownMap）に対して使えるよう一般化したもの
+function rollupTotal(id, ownMap){
+  let v = ownMap[id] || 0;
+  for (const c of (CHILDREN[id] || [])) {
+    if (A[c].commodity.mnemonic === A[id].commodity.mnemonic) v += rollupTotal(c, ownMap);
+  }
+  return v;
+}
+// 純資産（資産－負債）：最上位の資産・負債科目（帳簿の主通貨のみ）のロールアップ合計。renderSidebar と同じ考え方
+function netWorthAtMonth(ownMap){
+  let assets = 0, liab = 0;
+  for (const id of ROOTS) {
+    if (A[id].commodity.mnemonic !== state.book.currency) continue;
+    const g = T(A[id].type).group;
+    const v = rollupTotal(id, ownMap);
+    if (g === 'asset') assets += v;
+    if (g === 'liab') liab -= v;
+  }
+  return assets - liab;
+}
+
 /* ---------- サイドバー ---------- */
 function renderSidebar(){
   const b = state.book;
@@ -741,6 +791,7 @@ function renderSidebar(){
   document.getElementById('navRecent').classList.toggle('on', state.view === 'recent');
   document.getElementById('navReport').classList.toggle('on', state.view === 'report');
   document.getElementById('navImport').classList.toggle('on', state.view === 'import');
+  document.getElementById('navStats').classList.toggle('on', state.view === 'stats');
   const R = state.recent;
   document.getElementById('recentCnt').textContent = R ? `${RECENT_PERIODS.find(x => x[0] === R.days)?.[1] ?? R.days + '日'} ${R.rows.length}` : '';
 
@@ -783,6 +834,7 @@ function renderMain(){
   if (state.view === 'recent') return renderRecent();
   if (state.view === 'report') return renderReport();
   if (state.view === 'import') return renderImport();
+  if (state.view === 'stats') return renderStats();
   const main = document.getElementById('main');
   const id = state.selected;
   if (!id) { main.innerHTML = '<div class="loading">左の一覧から勘定科目を選んでください</div>'; return; }
@@ -1117,6 +1169,10 @@ function suggestOptions(type){
   if (type === 'acct') return state.book.accounts
     .filter(a => !a.placeholder && (state.view !== 'account' || a.guid !== state.selected)).map(a => fullName(a.guid));
   if (type === 'acctAll') return state.book.accounts.filter(a => !a.placeholder).map(a => fullName(a.guid));
+  // 統計・グラフ画面の科目追加欄専用：実在の科目に加えて「純資産（資産－負債）」の疑似項目も選べるようにする
+  // （acctAll は取引の分割行や取り込み画面の科目マッピングなど他の用途でも共有しているため、
+  // そちらに実在しない項目を混ぜると選べても解決できない選択肢になってしまう）
+  if (type === 'statsAcct') return [statsLabel(NETWORTH_ID), ...suggestOptions('acctAll')];
   return [];
 }
 const suggest = {input: null, items: []};
@@ -1183,6 +1239,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowDown') { e.preventDefault(); moveSuggest(1); }
   else if (e.key === 'ArrowUp') { e.preventDefault(); moveSuggest(-1); }
   else if (e.key === 'Enter' && suggestIndex() >= 0) { e.preventDefault(); pickSuggest(suggestIndex()); }
+  else if (e.key === 'Enter' && e.target.id === 'statsAcctInput') { e.preventDefault(); addStatsAccount(); }
   else if (e.key === 'Escape') { closeSuggest(); }
 });
 document.getElementById('suggestBox').addEventListener('mousedown', e => {
@@ -1263,13 +1320,13 @@ function render({scrollBottom = false, anchor = null, nav = false} = {}){
   // 勘定科目を選んでいればその guid、それ以外は /）。科目の切り替えだけ履歴に積み、
   // 同じ画面内の描き直し（検索絞り込み・編集中など）は積まない
   const path = state.view === 'recent' ? '/recent' : state.view === 'report' ? '/report' : state.view === 'import' ? '/import'
-    : state.selected ? '/' + state.selected : '/';
+    : state.view === 'stats' ? '/stats' : state.selected ? '/' + state.selected : '/';
   if (!skipHistoryWrite && location.pathname !== path) {
     try { history[nav ? 'pushState' : 'replaceState'](null, '', path + location.search); } catch {}
   }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
-  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.selected;
+  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   closeSuggest();   // #main を作り直すと候補ドロップダウンを出していた入力欄ごと消えるため閉じておく
@@ -1751,6 +1808,59 @@ function openImport(){
 }
 document.getElementById('navImport').onclick = () => openImport();
 
+async function openStats(){
+  state.view = 'stats'; state.editing = null; state.q = '';
+  state.drafts = {}; state.openSplits.clear();
+  if (!state.stats) {
+    const to = state.today.slice(0, 7);
+    state.stats = {from: shiftMonth(state.today, -11).slice(0, 7), to, selected: [], data: null};
+  }
+  app.classList.add('show-main');
+  render({nav: true});
+  await loadStats();
+}
+document.getElementById('navStats').onclick = () => openStats();
+function addStatsAccount(){
+  const input = document.getElementById('statsAcctInput');
+  const text = input.value.trim();
+  const id = text === statsLabel(NETWORTH_ID) ? NETWORTH_ID : resolveAccount(text);
+  if (!id) return toast('一覧から勘定科目を選んでください');
+  if (state.stats.selected.includes(id)) return;
+  state.stats.selected.push(id);
+  input.value = '';
+  loadStats();
+}
+// 統計・グラフ：選択中の項目（「純資産」を含む）それぞれについて、子科目や純資産の集計に必要な
+// 科目一覧分の月次データを1回のAPI呼び出しでまとめて取得し、/api/book と同じロールアップ処理（rollupTotal）で合算する
+async function loadStats(){
+  const st = state.stats;
+  if (!st) return;
+  st.data = null;
+  if (state.view === 'stats') render();
+  if (!st.selected.length) { st.data = {months: [], values: {}}; if (state.view === 'stats') render(); return; }
+  const guids = new Set();
+  for (const id of st.selected) {
+    if (id === NETWORTH_ID) {
+      for (const r of ROOTS) {
+        if (A[r].commodity.mnemonic !== state.book.currency || !T(A[r].type).group) continue;
+        descendantGuidsOf(r).forEach(g => guids.add(g));
+      }
+    } else {
+      descendantGuidsOf(id).forEach(g => guids.add(g));
+    }
+  }
+  try {
+    const res = await api('GET', `/api/reports/account-history?from=${st.from}&to=${st.to}&accounts=${[...guids].join(',')}`);
+    const monthMaps = res.months.map((_, i) => {
+      const m = {}; for (const g of guids) m[g] = res.series[g]?.[i] ?? 0; return m;
+    });
+    const values = {};
+    for (const id of st.selected) values[id] = monthMaps.map(m => id === NETWORTH_ID ? netWorthAtMonth(m) : rollupTotal(id, m));
+    st.data = {months: res.months, values};
+  } catch (e) { toast(e.message); st.data = {months: [], values: {}}; }
+  if (state.view === 'stats') render();
+}
+
 // 出金元（貸方）→ 入金先（借方）。分割取引は片側が 1 科目ならその科目を出す
 function pairOf(tx){
   const sp = tx.splits;
@@ -2048,6 +2158,82 @@ function renderImport(){
   }
   body += `</div></div>`;
   main.innerHTML = header + body;
+}
+
+const STATS_PALETTE = ['#3559e0', '#e8702a', '#16a34a', '#db2777', '#7c3aed', '#0891b2', '#ca8a04', '#ef4444'];
+function buildStatsChartSvg(months, series){
+  const W = 880, H = 300, padL = 64, padR = 16, padT = 16, padB = 34;
+  const cw = W - padL - padR, ch = H - padT - padB;
+  const maxVal = Math.max(1, ...series.flatMap(s => s.vals)) * 1.1;
+  const x = i => padL + (months.length > 1 ? i * cw / (months.length - 1) : cw / 2);
+  const y = v => padT + ch - (v / maxVal) * ch;
+  const gridN = 4;
+  const gridLines = Array.from({length: gridN + 1}, (_, i) => {
+    const v = maxVal * i / gridN, yy = y(v);
+    return `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W - padR}" y2="${yy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
+      <text x="${padL - 8}" y="${(yy + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)">${esc(money(v, bookCommodity()))}</text>`;
+  }).join('');
+  const labelStep = Math.max(1, Math.ceil(months.length / 12));
+  const xLabels = months.map((m, i) => (i % labelStep === 0 || i === months.length - 1)
+    ? `<text x="${x(i).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(m.replace('-', '/'))}</text>` : '').join('');
+  const lines = series.map(s => {
+    const label = statsLabel(s.id);
+    const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    const dots = s.vals.map((v, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.5" fill="${s.color}" pointer-events="none"/>`).join('');
+    // 実際に見える点（上の dots）とは別に、カーソルを当てやすいよう少し大きい透明な円を重ねてツールチップのホバー対象にする
+    const hits = s.vals.map((v, i) => `<circle class="stats-pt" cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="9" fill="transparent"
+        data-label="${esc(label)}" data-month="${esc(months[i])}" data-val="${esc(money(v, bookCommodity()))}"/>`).join('');
+    return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" pointer-events="none"/>${dots}${hits}`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="勘定科目ごとの月次推移の折れ線グラフ">${gridLines}${xLabels}${lines}</svg>`;
+}
+function renderStats(){
+  const main = document.getElementById('main');
+  const st = state.stats;
+  const header = `
+    <div class="header"><div>
+      <button class="back" data-back>‹ 勘定科目一覧</button>
+      <h1 class="title">統計・グラフ</h1>
+      <div class="desc">勘定科目ごとの月次推移を折れ線グラフで確認します（資産・負債は月末残高、収益・費用は月次の合計）</div>
+    </div></div>
+    <div class="toolbar stats-toolbar">
+      <label class="fl"><span>開始年月</span><input class="f" type="month" id="statsFrom" value="${esc(st.from)}"></label>
+      <label class="fl"><span>終了年月</span><input class="f" type="month" id="statsTo" value="${esc(st.to)}"></label>
+      <label class="search" style="max-width:280px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="statsAcctInput" placeholder="勘定科目・純資産を追加" autocomplete="off" data-suggest="statsAcct">
+      </label>
+      <button type="button" class="btn" id="statsAddAcct">追加</button>
+    </div>`;
+
+  if (!st.selected.length) {
+    main.innerHTML = header + `<div class="card"><div class="stats-empty">勘定科目を追加するとグラフが表示されます</div></div>`;
+    return;
+  }
+  if (!st.data) {
+    main.innerHTML = header + `<div class="card"><div class="loading">読み込み中…</div></div>`;
+    return;
+  }
+
+  const months = st.data.months;
+  const series = st.selected.map((id, i) => ({
+    id, color: STATS_PALETTE[i % STATS_PALETTE.length],
+    vals: st.data.values[id] || months.map(() => 0), isBalance: isBalanceAccount(id),
+  }));
+
+  main.innerHTML = header + `
+    <div class="card stats-card">
+      <div class="stats-legend">
+        ${series.map(s => `
+          <span class="stats-chip">
+            <span class="dot" style="background:${s.color}"></span>
+            ${esc(statsLabel(s.id))}
+            <span class="tag">${s.isBalance ? '残高' : '月次収支'}</span>
+            <button type="button" class="x" data-stats-remove="${s.id}" aria-label="「${esc(statsLabel(s.id))}」をグラフから外す">✕</button>
+          </span>`).join('')}
+      </div>
+      <div class="stats-chart">${buildStatsChartSvg(months, series)}<div class="stats-tooltip" id="statsTooltip" hidden></div></div>
+    </div>`;
 }
 
 // 最近の取引一覧部分の HTML だけを組み立てる（検索中の絞り込み更新でヘッダーごと作り直さずに済むように分離）
@@ -2391,6 +2577,12 @@ main.addEventListener('click', e => {
     if (row) return undoRowMapping(row.undo);
     return;
   }
+  if (t.closest('#statsAddAcct')) return addStatsAccount();
+  const statsRemove = t.closest('[data-stats-remove]');
+  if (statsRemove) {
+    state.stats.selected = state.stats.selected.filter(id => id !== statsRemove.dataset.statsRemove);
+    loadStats(); return;
+  }
   if (t.closest('[data-more]')) {
     const sc = document.getElementById('scroll'), h = sc.scrollHeight;
     state.limit += 1000; render(); sc.scrollTop = document.getElementById('scroll').scrollHeight - h; return;
@@ -2514,6 +2706,8 @@ main.addEventListener('change', e => {
   if (e.target.id === 'reportFrom') { state.reportFrom = e.target.value; changeReportRange(); return; }
   if (e.target.id === 'reportTo') { state.reportTo = e.target.value; changeReportRange(); return; }
   if (e.target.id === 'impFile') { const f = e.target.files[0]; if (f) handleImportFile(f); return; }
+  if (e.target.id === 'statsFrom') { state.stats.from = e.target.value || state.stats.from; loadStats(); return; }
+  if (e.target.id === 'statsTo') { state.stats.to = e.target.value || state.stats.to; loadStats(); return; }
   if (e.target.name !== 'desc') return;
   const f = e.target.closest('form');
   f.dataset.form === 'rnew' ? quickfillPair(f) : quickfill(f);
@@ -2522,6 +2716,27 @@ main.addEventListener('focusout', e => {
   if ((['l', 'r', 'amt'].includes(e.target.name) || e.target.dataset.k === 'l' || e.target.dataset.k === 'r') && e.target.value) {
     const v = parseAmt(e.target.value); if (!isNaN(v)) e.target.value = v ? plain(v, ctx()) : '';
   }
+});
+// 統計・グラフの折れ線上の点にカーソルを当てたときのツールチップ
+main.addEventListener('mouseover', e => {
+  const pt = e.target.closest?.('.stats-pt');
+  if (!pt) return;
+  const tip = document.getElementById('statsTooltip');
+  const chart = pt.closest('.stats-chart');
+  if (!tip || !chart) return;
+  const cRect = chart.getBoundingClientRect(), pRect = pt.getBoundingClientRect();
+  tip.textContent = pt.dataset.val;
+  tip.hidden = false;
+  // 左右の端の点では吹き出しが中央揃えのままだとはみ出すので、グラフの幅に収まるよう位置を補正する
+  const half = tip.offsetWidth / 2;
+  const left = Math.min(Math.max(pRect.left - cRect.left + pRect.width / 2, half + 4), chart.clientWidth - half - 4);
+  tip.style.left = left + 'px';
+  tip.style.top = (pRect.top - cRect.top + pRect.height / 2) + 'px';
+});
+main.addEventListener('mouseout', e => {
+  if (!e.target.closest?.('.stats-pt')) return;
+  const tip = document.getElementById('statsTooltip');
+  if (tip) tip.hidden = true;
 });
 
 /* ---------- パスキー認証 ---------- */
@@ -2691,10 +2906,11 @@ async function boot(){
     document.getElementById('tree').innerHTML = `<div class="empty">読み込みに失敗しました<br>${esc(e.message)}</div>`;
     return;
   }
-  // /recent・/report・/import で開いた場合はそれぞれの画面を直接表示する（ホーム画面への追加用のエントリーポイント）
+  // /recent・/report・/import・/stats で開いた場合はそれぞれの画面を直接表示する（ホーム画面への追加用のエントリーポイント）
   if (location.pathname === '/recent') return openRecent();
   if (location.pathname === '/report') return openReport();
   if (location.pathname === '/import') return openImport();
+  if (location.pathname === '/stats') return openStats();
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // /<勘定科目の guid> で開いた・リロードした場合は、画面幅に関わらずその科目を直接開く
   const directId = location.pathname.slice(1);
@@ -2717,6 +2933,7 @@ async function syncViewFromLocation(){
     if (p === '/recent') return await openRecent();
     if (p === '/report') return await openReport();
     if (p === '/import') return openImport();
+    if (p === '/stats') return openStats();
     const id = p.slice(1);
     if (id && A[id]) return await select(id);
     // ルート、またはもう存在しない科目の guid なら「未選択」に戻す

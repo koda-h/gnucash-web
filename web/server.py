@@ -84,6 +84,36 @@ def new_guid():
     return uuid.uuid4().hex
 
 
+MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+def month_range(frm, to):
+    """"YYYY-MM" 同士の間の年月のリスト（両端含む）。統計・グラフ画面の期間指定用。"""
+    if not MONTH_RE.match(frm or "") or not MONTH_RE.match(to or ""):
+        raise ApiError(400, "期間が正しくありません")
+    y, m = map(int, frm.split("-"))
+    ty, tm = map(int, to.split("-"))
+    months = []
+    while (y, m) <= (ty, tm) and len(months) < 120:
+        months.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    if not months:
+        raise ApiError(400, "期間が正しくありません")
+    return months
+
+
+def month_bounds_utc(ym):
+    """"YYYY-MM" の月初0時〜月末23:59:59.999999 を、NORM_POST_DATE と比較できる
+    UTC の 'YYYYMMDDHHMMSS' 文字列にする（ローカルタイムゾーン基準、他の日付絞り込みと同じ扱い）"""
+    y, m = map(int, ym.split("-"))
+    d_from = date(y, m, 1)
+    ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+    d_to = date(ny, nm, 1) - timedelta(days=1)
+    start = datetime.combine(d_from, dtime.min).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+    end = datetime.combine(d_to, dtime.max).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+    return start, end
+
+
 # ---------------------------------------------------------------- 帳簿アクセス
 
 class Book:
@@ -334,6 +364,61 @@ class Book:
             fractions[g] = r["fraction"] or 1
         balances = {g: to_number(v, fractions[g]) for g, v in own.items()}
         return {"from": frm, "to": to, "balances": balances}
+
+    BALANCE_TYPES = {"ASSET", "BANK", "CASH", "STOCK", "MUTUAL", "RECEIVABLE", "CURRENCY",
+                      "CREDIT", "LIABILITY", "PAYABLE"}
+
+    def account_history(self, frm, to, account_guids):
+        """統計・グラフ画面向け：指定した科目それぞれの月ごとの値（自分自身の split のみ）を返す。
+        資産・負債系の科目は月末時点の残高（その科目の split の全履歴からの累計）、
+        収益・費用系の科目（純資産などその他の種類も含む）はその月の split 合計（流量）。
+        子科目のロールアップ・「純資産」の合算は、/api/book と同じ木構造・commodity 一致判定を
+        使ってフロント側で行う"""
+        months = month_range(frm, to)
+        account_guids = list(dict.fromkeys(g for g in account_guids if g))   # 重複除去・順序維持
+        if not account_guids:
+            return {"months": months, "series": {}}
+        with self.connect() as con:
+            qmarks = ",".join("?" * len(account_guids))
+            type_rows = con.execute(f"""
+                select a.guid, a.account_type, c.fraction from accounts a
+                left join commodities c on c.guid = a.commodity_guid
+                where a.guid in ({qmarks})""", account_guids).fetchall()
+            found = {r["guid"] for r in type_rows}
+            if any(g not in found for g in account_guids):
+                raise ApiError(404, "勘定科目が見つかりません")
+            types = {r["guid"]: r["account_type"] for r in type_rows}
+            fractions = {r["guid"]: r["fraction"] or 1 for r in type_rows}
+            rows = con.execute(f"""
+                select s.account_guid, s.quantity_num, s.quantity_denom, {NORM_POST_DATE} as pd
+                from splits s join transactions t on t.guid = s.tx_guid
+                where s.account_guid in ({qmarks})
+                order by s.account_guid, pd""", account_guids).fetchall()
+        by_acct = {}
+        for r in rows:
+            by_acct.setdefault(r["account_guid"], []).append(r)
+        bounds = [month_bounds_utc(m) for m in months]
+        series = {}
+        for g in account_guids:
+            splits, fraction, vals, idx = by_acct.get(g, []), fractions[g], [], 0
+            if types[g] in self.BALANCE_TYPES:
+                running = Fraction(0)
+                for _, end in bounds:
+                    while idx < len(splits) and splits[idx]["pd"] <= end:
+                        running += frac(splits[idx]["quantity_num"], splits[idx]["quantity_denom"])
+                        idx += 1
+                    vals.append(to_number(running, fraction))
+            else:
+                for start, end in bounds:
+                    while idx < len(splits) and splits[idx]["pd"] < start:
+                        idx += 1
+                    s = Fraction(0)
+                    while idx < len(splits) and splits[idx]["pd"] <= end:
+                        s += frac(splits[idx]["quantity_num"], splits[idx]["quantity_denom"])
+                        idx += 1
+                    vals.append(to_number(s, fraction))
+            series[g] = vals
+        return {"months": months, "series": series}
 
     def _tx_payload(self, t, splits, has_invoice):
         fraction = t["fraction"] or 1
@@ -909,6 +994,12 @@ class Handler(BaseHTTPRequestHandler):
             if not frm or not to:
                 raise ApiError(400, "from・to が必要です")
             return self._send(200, b.income_statement(frm, to))
+        if method == "GET" and p == "/api/reports/account-history":
+            frm, to = qs.get("from", [""])[0], qs.get("to", [""])[0]
+            accounts = [g for g in qs.get("accounts", [""])[0].split(",") if g]
+            if not frm or not to:
+                raise ApiError(400, "from・to が必要です")
+            return self._send(200, b.account_history(frm, to, accounts))
         if method == "GET" and p == "/api/mf-import/mappings":
             return self._send(200, b.mf_import_mappings())
         if method == "POST" and p == "/api/mf-import/mappings":
