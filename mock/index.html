@@ -270,6 +270,14 @@ dialog.confirm{width:min(400px, calc(100vw - 32px))}
 .pill.go{border:0;cursor:pointer;font:inherit;font-size:12.5px}
 .pill.go:hover{color:var(--text);background:var(--border)}
 .badge-new{font-size:10px;font-weight:700;color:var(--surface);background:var(--warn);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:1px}
+
+/* 取引検索 */
+.srow{display:grid;grid-template-columns:76px minmax(160px,1fr) minmax(220px,1.4fr) 120px;gap:0 14px;align-items:center;padding:8px 20px;
+  min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
+.srow:hover{background:var(--hover)}
+.srow.flash{animation:flash 1.6s ease-out}
+.s-memo{display:block;font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 .rsplit{background:var(--surface-2);border-bottom:1px solid var(--border);padding:4px 0}
 .rsplit .rgrid{min-height:30px;font-size:13px}
 .rsplit .m{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -533,6 +541,9 @@ form.busy{opacity:.6;pointer-events:none}
       <button type="button" class="nav-icon" id="navStats" data-tip="統計・グラフ" aria-label="統計・グラフ">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 15l5-5 4 4 7-7"/></svg>
       </button>
+      <button type="button" class="nav-icon" id="navSearch" data-tip="取引検索" aria-label="取引検索">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </button>
     </div>
     <div class="tree-tools">
       <label class="search">
@@ -627,6 +638,7 @@ const state = {
   limit: PAGE,
   imp: null,    // マネーフォワード取り込みの作業状態。null = まだファイル未選択
   stats: null,  // 統計・グラフ画面の状態 {from, to, selected}。null = まだ開いていない
+  search: null, // 取引検索画面の状態 {q, rows}。null = まだ開いていない
 };
 let A = {}, CHILDREN = {}, ROOTS = [], TOTAL = {};
 
@@ -807,6 +819,17 @@ const MOCK = (() => {
     const sinceKey = isoMin(since);
     const rows = TX.filter(t => t.enter >= sinceKey).slice().sort((a, b) => b.enter.localeCompare(a.enter)).map(txPayload);
     return {days, since: iso(since), rows};
+  }
+  // 取引検索：期間を問わず全取引から、説明またはいずれかの分割のメモに q を含むものを新しい順に返す
+  function search(q){
+    q = (q || '').trim();
+    if (!q) return {q, rows: []};
+    const needle = q.toLowerCase();
+    const rows = TX.filter(t => t.desc.toLowerCase().includes(needle)
+        || t.splits.some(s => (s.memo || '').toLowerCase().includes(needle)))
+      .slice().sort((a, b) => b.date.localeCompare(a.date) || b.enter.localeCompare(a.enter))
+      .slice(0, 200).map(txPayload);
+    return {q, rows};
   }
 
   function quickfillPair(desc){
@@ -999,7 +1022,7 @@ const MOCK = (() => {
     return {created};
   }
 
-  return {book, register, recent, quickfill, quickfillPair, create, update, copy, del, restore, txPayload, findTx,
+  return {book, register, recent, search, quickfill, quickfillPair, create, update, copy, del, restore, txPayload, findTx,
            createAccount, updateAccount, deleteAccount, incomeStatement,
            importMappings, saveImportMapping, deleteImportMapping, importedIdList, commitImport};
 })();
@@ -1023,6 +1046,7 @@ async function api(method, url, body){
       return account ? MOCK.quickfill(account, desc) : MOCK.quickfillPair(desc);
     }
     if (method === 'GET' && path === '/api/recent') return MOCK.recent(parseInt(q.get('days') || '7', 10));
+    if (method === 'GET' && path === '/api/search') return MOCK.search(q.get('q') || '');
     if (method === 'GET' && path === '/api/reports/income-statement') return MOCK.incomeStatement(q.get('from') || '', q.get('to') || '');
     if (method === 'GET' && path === '/api/import/mappings') return MOCK.importMappings();
     if (method === 'POST' && path === '/api/import/mappings') return MOCK.saveImportMapping(body.kind, body.key, body.account);
@@ -1394,6 +1418,7 @@ function renderSidebar(){
   document.getElementById('navReport').classList.toggle('on', state.view === 'report');
   document.getElementById('navImport').classList.toggle('on', state.view === 'import');
   document.getElementById('navStats').classList.toggle('on', state.view === 'stats');
+  document.getElementById('navSearch').classList.toggle('on', state.view === 'search');
   const R = state.recent;
   const recentCnt = document.getElementById('recentCnt');
   recentCnt.textContent = R ? R.rows.length : '';
@@ -1441,6 +1466,7 @@ function renderMain(){
   if (state.view === 'report') return renderReport();
   if (state.view === 'import') return renderImport();
   if (state.view === 'stats') return renderStats();
+  if (state.view === 'search') return renderSearch();
   const main = document.getElementById('main');
   const id = state.selected;
   if (!id) { main.innerHTML = '<div class="loading">左の一覧から勘定科目を選んでください</div>'; return; }
@@ -1794,7 +1820,7 @@ function render({scrollBottom = false, anchor = null} = {}){
   // 画面の種類に合わせて URL を同期する（最近の取引なら BASE#recent、それ以外なら BASE）。
   // 静的ホスティングでも再読み込みできるよう、パスではなくハッシュで切り替える。
   // 履歴を汚さないよう pushState ではなく replaceState を使う
-  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : state.view === 'import' ? '#import' : state.view === 'stats' ? '#stats' : '');
+  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : state.view === 'import' ? '#import' : state.view === 'stats' ? '#stats' : state.view === 'search' ? '#search' : '');
   // file:// や data: で開くとドキュメントの origin が null になり replaceState が
   // SecurityError を投げることがある。URL同期に失敗しても描画自体は続行する
   if (location.pathname + location.search + location.hash !== url) {
@@ -1802,7 +1828,7 @@ function render({scrollBottom = false, anchor = null} = {}){
   }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
-  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.selected;
+  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.view === 'search' ? '__search' : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   renderSidebar();
@@ -2118,6 +2144,88 @@ function recentSplitView(tx){
     <span class="flow"><span class="dir">${s.value > 0 ? '入金先' : s.value < 0 ? '出金元' : ''}</span>${accPill(s.account)}${recBadge(s.rec)}</span>
     <span class="r num">${money(Math.abs(s.value), tx.currency)}</span>
   </div>`).join('')}</div>`;
+}
+
+/* ---------- 取引検索 ---------- */
+function openSearch(){
+  state.view = 'search'; state.editing = null; state.q = '';
+  state.drafts = {}; state.openSplits.clear();
+  if (!state.search) state.search = {q: '', rows: []};
+  app.classList.add('show-main');
+  render();
+  document.getElementById('searchQ')?.focus();
+}
+document.getElementById('navSearch').onclick = () => openSearch();
+let searchTimer = null;
+// 入力のたびに #main ごと作り直すとフォーカスが切れるので、結果一覧（#scroll）だけ差し替える
+function updateSearchBody(){
+  const scroll = document.getElementById('scroll');
+  if (!scroll || scroll.dataset.account !== '__search') return;
+  scroll.innerHTML = searchBody();
+}
+function queueSearch(q){
+  state.search.q = q;
+  clearTimeout(searchTimer);
+  if (!q.trim()) { state.search.rows = []; updateSearchBody(); return; }
+  state.search.rows = null; updateSearchBody();   // 検索中の表示
+  searchTimer = setTimeout(async () => {
+    try {
+      const res = await api('GET', `/api/search?q=${encodeURIComponent(q)}`);
+      if (state.search.q !== q) return;   // その間に入力が変わっていたら古い結果は捨てる
+      state.search.rows = res.rows;
+      updateSearchBody();
+    } catch (e) { toast(e.message); }
+  }, 300);
+}
+function searchBody(){
+  const q = state.search.q;
+  if (!q.trim()) return `<div class="empty">取引の説明・メモを入力して検索します</div>`;
+  if (state.search.rows === null) return `<div class="loading">検索中…</div>`;
+  if (!state.search.rows.length) return `<div class="empty">一致する取引がありません</div>`;
+  return state.search.rows.map(tx => searchRow(tx, q)).join('');
+}
+function searchRow(tx, q){
+  const p = pairOf(tx);
+  const jumpAccount = p.to || p.from || tx.splits[0]?.account || '';
+  const needle = q.toLowerCase();
+  const descHit = tx.desc.toLowerCase().includes(needle);
+  const memoHit = !descHit ? tx.splits.find(s => (s.memo || '').toLowerCase().includes(needle)) : null;
+  const flow = p.simple ? `${accPill(p.from)}<span class="arrow">→</span>${accPill(p.to)}`
+    : (p.from || p.to) ? `${p.from ? accPill(p.from) : '<span class="pill">分割取引</span>'}<span class="arrow">→</span>${p.to ? accPill(p.to) : '<span class="pill">分割取引</span>'}`
+    : '<span class="pill">分割取引</span>';
+  const [y, m, d] = tx.date.split('-');
+  return `<div class="srow ${state.flash===tx.guid?'flash':''}" data-search-goto="${tx.guid}" data-search-account="${jumpAccount}" tabindex="0">
+    <span class="r-pd num">${m}/${d}<span class="wd">${WD[new Date(+y, m-1, +d).getDay()]}</span></span>
+    <span class="r-ds">${tx.desc ? hl(tx.desc, q) : '<span class="ph">（説明なし）</span>'}${memoHit ? `<span class="s-memo">メモ: ${hl(memoHit.memo, q)}</span>` : ''}</span>
+    <span class="flow">${flow}</span>
+    <span class="r-amt r num">${money(p.amount, tx.currency)}</span>
+  </div>`;
+}
+async function gotoSearchResult(accountGuid, txGuid){
+  if (!accountGuid || !A[accountGuid]) return toast('勘定科目が見つかりません');
+  state.flash = txGuid;
+  await select(accountGuid);
+  setTimeout(() => { state.flash = null; }, 1700);
+}
+function renderSearch(){
+  const main = document.getElementById('main');
+  const st = state.search;
+  main.innerHTML = `
+    <div class="header"><div>
+      <button class="back" data-back>‹ 勘定科目一覧</button>
+      <h1 class="title">取引検索</h1>
+      <div class="desc">取引の説明・メモを全期間から検索します</div>
+    </div></div>
+    <div class="toolbar">
+      <label class="search" style="max-width:360px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="searchQ" placeholder="説明・メモで検索" autocomplete="off" value="${esc(st.q)}">
+        <button type="button" class="clear" data-clear title="クリア" aria-label="入力内容をクリア"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </label>
+    </div>
+    <div class="card">
+      <div class="scroll" id="scroll" data-account="__search">${searchBody()}</div>
+    </div>`;
 }
 
 function pairFields(v){
@@ -2811,7 +2919,7 @@ document.addEventListener('click', e => {
   if (btn) clearSearch(btn.parentElement.querySelector('input'));
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && (e.target.id === 'treeQ' || e.target.id === 'regQ') && clearSearch(e.target)) e.preventDefault();
+  if (e.key === 'Escape' && (e.target.id === 'treeQ' || e.target.id === 'regQ' || e.target.id === 'searchQ') && clearSearch(e.target)) e.preventDefault();
 });
 document.getElementById('toggleAll').onclick = () => {
   const parents = state.book.accounts.filter(a => CHILDREN[a.guid]).map(a => a.guid);
@@ -2830,6 +2938,8 @@ main.addEventListener('click', e => {
   if (go) return select(go.dataset.go, go.dataset.goFrom
     ? {repRange: {from: go.dataset.goFrom, to: go.dataset.goTo}, repLabel: go.dataset.goLabel}
     : undefined);
+  const sg = t.closest('[data-search-goto]');
+  if (sg) return gotoSearchResult(sg.dataset.searchAccount, sg.dataset.searchGoto);
   const p = t.closest('[data-period]'); if (p) { state.period = p.dataset.period; state.limit = PAGE; render({scrollBottom: true}); return; }
   const rpp = t.closest('[data-report-preset]'); if (rpp) return changeReportPreset(rpp.dataset.reportPreset);
   if (t.closest('[data-imp-reset]')) { state.imp = null; render(); return; }
@@ -2958,6 +3068,11 @@ main.addEventListener('input', e => {
     refilterList();
     return;
   }
+  if (e.target.id === 'searchQ') {
+    if (e.isComposing) return;
+    queueSearch(e.target.value);
+    return;
+  }
   const f = e.target.closest('form'); if (!f) return;
   const k = e.target.dataset.k;
   if (k) {   // 分割行
@@ -2971,6 +3086,12 @@ main.addEventListener('input', e => {
   if (e.target.name === 'l' && e.target.value) f.elements.r.value = '';
   if (e.target.name === 'r' && e.target.value) f.elements.l.value = '';
   updatePreview(f);
+});
+// IME変換の確定後に isComposing が false の input イベントが来ない環境があり、
+// その場合 input イベント側の isComposing ガードだけでは確定後の検索が走らないため、
+// compositionend でも確実に検索を走らせる（input 側と二重に呼ばれても実害はない）
+main.addEventListener('compositionend', e => {
+  if (e.target.id === 'searchQ') queueSearch(e.target.value);
 });
 main.addEventListener('change', e => {
   if (e.target.id === 'impFile') { const f = e.target.files[0]; if (f) handleImportFile(f); return; }
@@ -3181,6 +3302,7 @@ async function boot(){
   if (location.hash === '#report' || /\/report\/?$/.test(location.pathname)) return openReport();
   if (location.hash === '#import' || /\/import\/?$/.test(location.pathname)) return openImport();
   if (location.hash === '#stats' || /\/stats\/?$/.test(location.pathname)) return openStats();
+  if (location.hash === '#search' || /\/search\/?$/.test(location.pathname)) return openSearch();
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])

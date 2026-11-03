@@ -420,6 +420,43 @@ class Book:
             series[g] = vals
         return {"months": months, "series": series}
 
+    def search_transactions(self, q, limit=200):
+        """取引検索：期間を問わず全取引から、説明またはいずれかの分割のメモに q を含むものを
+        新しい順に返す（大文字小文字は区別しない。SQLite の LIKE の既定動作）。"""
+        q = (q or "").strip()
+        if not q:
+            return {"q": q, "rows": []}
+        like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        with self.connect() as con:
+            tx_rows = con.execute(f"""
+                select t.guid
+                from transactions t
+                where t.description like ? escape '\\'
+                   or exists (select 1 from splits s where s.tx_guid = t.guid and s.memo like ? escape '\\')
+                order by {NORM_POST_DATE} desc, {NORM_ENTER_DATE} desc
+                limit ?""", (like, like, limit)).fetchall()
+            guids = [r["guid"] for r in tx_rows]
+            if not guids:
+                return {"q": q, "rows": []}
+            qmarks = ",".join("?" * len(guids))
+            tx_by_guid = {t["guid"]: t for t in con.execute(f"""
+                select {self.TX_COLUMNS}
+                from transactions t join commodities c on c.guid = t.currency_guid
+                where t.guid in ({qmarks})""", guids)}
+            splits = {}
+            for r in con.execute(f"""
+                    select {self.SPLIT_COLUMNS}
+                    from splits s join accounts a on a.guid = s.account_guid
+                    left join commodities c on c.guid = a.commodity_guid
+                    where s.tx_guid in ({qmarks})
+                    order by s.rowid""", guids):
+                splits.setdefault(r["tx_guid"], []).append(r)
+            invoices = {r[0] for r in con.execute(
+                f"select post_txn from invoices where post_txn in ({qmarks})", guids)}
+        ordered = [tx_by_guid[g] for g in guids if g in tx_by_guid]
+        return {"q": q, "rows": [self._tx_payload(t, splits.get(t["guid"], []), t["guid"] in invoices)
+                                  for t in ordered]}
+
     def _tx_payload(self, t, splits, has_invoice):
         fraction = t["fraction"] or 1
         enter = parse_ts(t["enter_date"])
@@ -1000,6 +1037,8 @@ class Handler(BaseHTTPRequestHandler):
             if not frm or not to:
                 raise ApiError(400, "from・to が必要です")
             return self._send(200, b.account_history(frm, to, accounts))
+        if method == "GET" and p == "/api/search":
+            return self._send(200, b.search_transactions(qs.get("q", [""])[0]))
         if method == "GET" and p == "/api/mf-import/mappings":
             return self._send(200, b.mf_import_mappings())
         if method == "POST" and p == "/api/mf-import/mappings":
