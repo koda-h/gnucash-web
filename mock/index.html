@@ -239,14 +239,18 @@ dialog.confirm{width:min(400px, calc(100vw - 32px))}
 .confirm-body{padding:18px 20px 4px;font-size:13.5px;line-height:1.7;color:var(--text)}
 .confirm-bar{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:14px 20px 18px;margin-top:14px;border-top:1px solid var(--border);background:var(--surface-2);border-radius:0 0 14px 14px}
 
-/* 最近の取引 */
-.nav-recent{margin:0 8px 10px;width:calc(100% - 16px);display:flex;align-items:center;gap:10px;height:38px;padding:0 12px;border:0;border-radius:9px;
-  background:none;cursor:pointer;font-weight:500;text-align:left}
-.nav-recent:hover{background:var(--hover)}
-.nav-recent.on{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
-.nav-recent svg{flex:none}
-.nav-recent .cnt{margin-left:auto;font-size:11px;font-weight:600;background:var(--surface-2);color:var(--muted);border-radius:999px;padding:0 7px;line-height:18px}
-.nav-recent.on .cnt{background:var(--accent);color:#fff}
+/* サイドバー上部のアイコンナビ（最近の取引・損益計算書・取り込み・統計など、
+   画面が増えても横に並ぶだけでツリー表示領域を侵食しないようにする） */
+.nav-bar{display:flex;gap:6px;padding:0 16px 14px}
+.nav-icon{position:relative;width:38px;height:38px;flex:none;display:grid;place-items:center;
+  border:0;border-radius:9px;background:none;cursor:pointer;color:inherit}
+.nav-icon:hover{background:var(--hover)}
+.nav-icon.on{background:var(--accent-soft);color:var(--accent-text)}
+.nav-icon .badge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;
+  border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:10px;font-weight:600;line-height:16px;text-align:center}
+.nav-icon.on .badge{background:var(--accent);color:#fff}
+/* 吹き出しは上端に近いので、既定（上に出す）ではなく下向きに出す */
+.nav-bar [data-tip]::after{left:50%;bottom:auto;top:100%;margin-top:6px;margin-bottom:0;transform:translateX(-50%)}
 .rgrid{display:grid;grid-template-columns:52px 76px minmax(140px,1fr) minmax(240px,1.6fr) 120px;gap:0 14px;align-items:center;padding:0 20px}
 .rhead{height:36px;font-size:12px;color:var(--muted);font-weight:500;border-bottom:1px solid var(--border)}
 .rrow{min-height:46px;border-bottom:1px solid var(--border);cursor:pointer}
@@ -515,22 +519,21 @@ form.busy{opacity:.6;pointer-events:none}
     </div>
     <div class="networth" id="networth"></div>
     <div id="banner"></div>
-    <button type="button" class="nav-recent" id="navRecent">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      最近の取引<span class="cnt num" id="recentCnt"></span>
-    </button>
-    <button type="button" class="nav-recent" id="navReport">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M9 19v-6M14 19v-9M19 19v-4"/></svg>
-      損益計算書
-    </button>
-    <button type="button" class="nav-recent" id="navImport">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-      取り込み
-    </button>
-    <button type="button" class="nav-recent" id="navStats">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 15l5-5 4 4 7-7"/></svg>
-      統計・グラフ
-    </button>
+    <div class="nav-bar">
+      <button type="button" class="nav-icon" id="navRecent" data-tip="最近の取引" aria-label="最近の取引">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span class="badge num" id="recentCnt" hidden></span>
+      </button>
+      <button type="button" class="nav-icon" id="navReport" data-tip="損益計算書" aria-label="損益計算書">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M9 19v-6M14 19v-9M19 19v-4"/></svg>
+      </button>
+      <button type="button" class="nav-icon" id="navImport" data-tip="取り込み" aria-label="取り込み">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      </button>
+      <button type="button" class="nav-icon" id="navStats" data-tip="統計・グラフ" aria-label="統計・グラフ">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5"/><path d="M4 15l5-5 4 4 7-7"/></svg>
+      </button>
+    </div>
     <div class="tree-tools">
       <label class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -1392,7 +1395,11 @@ function renderSidebar(){
   document.getElementById('navImport').classList.toggle('on', state.view === 'import');
   document.getElementById('navStats').classList.toggle('on', state.view === 'stats');
   const R = state.recent;
-  document.getElementById('recentCnt').textContent = R ? `${RECENT_PERIODS.find(x => x[0] === R.days)?.[1] ?? R.days + '日'} ${R.rows.length}` : '';
+  const recentCnt = document.getElementById('recentCnt');
+  recentCnt.textContent = R ? R.rows.length : '';
+  recentCnt.hidden = !R;
+  if (R) document.getElementById('navRecent').dataset.tip =
+    `最近の取引（${RECENT_PERIODS.find(x => x[0] === R.days)?.[1] ?? R.days + '日'}・${R.rows.length}件）`;
 
   const q = state.treeQ.trim();
   const ql = q.toLowerCase();
