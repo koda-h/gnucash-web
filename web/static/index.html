@@ -737,11 +737,12 @@ function reportPeriodLabel(preset, range){
 }
 
 /* ---------- 統計・グラフ ---------- */
-// 「純資産（資産－負債）」は実際の科目ではなく合計の疑似シリーズとして扱う
+// 「純資産（資産－負債）」「純利益・純損失」は実際の科目ではなく合計の疑似シリーズとして扱う
 const NETWORTH_ID = '__networth__';
-const statsLabel = id => id === NETWORTH_ID ? '純資産（資産－負債）' : fullName(id);
+const NET_INCOME_ID = '__netincome__';
+const statsLabel = id => id === NETWORTH_ID ? '純資産（資産－負債）' : id === NET_INCOME_ID ? '純利益・純損失' : fullName(id);
 // 科目の種類から「残高推移（資産・負債）」か「月次収支の推移（収益・費用）」かを判定する
-const isBalanceAccount = id => id === NETWORTH_ID ? true : !!TYPES[A[id]?.type]?.group;
+const isBalanceAccount = id => id === NETWORTH_ID ? true : id === NET_INCOME_ID ? false : !!TYPES[A[id]?.type]?.group;
 // id の値（own）を、その子孫のうち commodity が親と一致するものだけ合算してロールアップする。
 // loadBook() で現在残高を TOTAL に集計するのと同じ考え方を、任意の月の値（ownMap）に対して使えるよう一般化したもの
 function rollupTotal(id, ownMap){
@@ -762,6 +763,24 @@ function netWorthAtMonth(ownMap){
     if (g === 'liab') liab -= v;
   }
   return assets - liab;
+}
+// id の値（own）を、子孫すべて（commodity は問わない）合算してロールアップする。
+// 損益計算書の PERIOD_TOTAL と同じ考え方（収益・費用はほぼ単一通貨で運用される前提）
+function rollupFlat(id, ownMap){
+  if (A[id].hidden) return 0;
+  let v = ownMap[id] || 0;
+  for (const c of (CHILDREN[id] || [])) v += rollupFlat(c, ownMap);
+  return v;
+}
+// 純利益・純損失：すべての収益・費用科目（非表示を除く）のロールアップ合計。損益計算書の「純利益」と同じ考え方
+function netIncomeAtMonth(ownMap){
+  let income = 0, expense = 0;
+  for (const id of ROOTS) {
+    if (A[id].hidden) continue;
+    if (A[id].type === 'INCOME') income += rollupFlat(id, ownMap) * sign(id);
+    if (A[id].type === 'EXPENSE') expense += rollupFlat(id, ownMap) * sign(id);
+  }
+  return income - expense;
 }
 
 /* ---------- サイドバー ---------- */
@@ -1172,7 +1191,7 @@ function suggestOptions(type){
   // 統計・グラフ画面の科目追加欄専用：実在の科目に加えて「純資産（資産－負債）」の疑似項目も選べるようにする
   // （acctAll は取引の分割行や取り込み画面の科目マッピングなど他の用途でも共有しているため、
   // そちらに実在しない項目を混ぜると選べても解決できない選択肢になってしまう）
-  if (type === 'statsAcct') return [statsLabel(NETWORTH_ID), ...suggestOptions('acctAll')];
+  if (type === 'statsAcct') return [statsLabel(NETWORTH_ID), statsLabel(NET_INCOME_ID), ...suggestOptions('acctAll')];
   return [];
 }
 const suggest = {input: null, items: []};
@@ -1823,15 +1842,17 @@ document.getElementById('navStats').onclick = () => openStats();
 function addStatsAccount(){
   const input = document.getElementById('statsAcctInput');
   const text = input.value.trim();
-  const id = text === statsLabel(NETWORTH_ID) ? NETWORTH_ID : resolveAccount(text);
+  const id = text === statsLabel(NETWORTH_ID) ? NETWORTH_ID
+    : text === statsLabel(NET_INCOME_ID) ? NET_INCOME_ID : resolveAccount(text);
   if (!id) return toast('一覧から勘定科目を選んでください');
   if (state.stats.selected.includes(id)) return;
   state.stats.selected.push(id);
   input.value = '';
   loadStats();
 }
-// 統計・グラフ：選択中の項目（「純資産」を含む）それぞれについて、子科目や純資産の集計に必要な
-// 科目一覧分の月次データを1回のAPI呼び出しでまとめて取得し、/api/book と同じロールアップ処理（rollupTotal）で合算する
+// 統計・グラフ：選択中の項目（「純資産」「純利益・純損失」を含む）それぞれについて、子科目や
+// 合計の集計に必要な科目一覧分の月次データを1回のAPI呼び出しでまとめて取得し、
+// /api/book と同じロールアップ処理（rollupTotal・rollupFlat）で合算する
 async function loadStats(){
   const st = state.stats;
   if (!st) return;
@@ -1845,6 +1866,11 @@ async function loadStats(){
         if (A[r].commodity.mnemonic !== state.book.currency || !T(A[r].type).group) continue;
         descendantGuidsOf(r).forEach(g => guids.add(g));
       }
+    } else if (id === NET_INCOME_ID) {
+      for (const r of ROOTS) {
+        if (A[r].hidden || (A[r].type !== 'INCOME' && A[r].type !== 'EXPENSE')) continue;
+        descendantGuidsOf(r).forEach(g => guids.add(g));
+      }
     } else {
       descendantGuidsOf(id).forEach(g => guids.add(g));
     }
@@ -1855,7 +1881,8 @@ async function loadStats(){
       const m = {}; for (const g of guids) m[g] = res.series[g]?.[i] ?? 0; return m;
     });
     const values = {};
-    for (const id of st.selected) values[id] = monthMaps.map(m => id === NETWORTH_ID ? netWorthAtMonth(m) : rollupTotal(id, m));
+    for (const id of st.selected) values[id] = monthMaps.map(m => id === NETWORTH_ID ? netWorthAtMonth(m)
+      : id === NET_INCOME_ID ? netIncomeAtMonth(m) : rollupTotal(id, m));
     st.data = {months: res.months, values};
   } catch (e) { toast(e.message); st.data = {months: [], values: {}}; }
   if (state.view === 'stats') render();
@@ -2164,15 +2191,21 @@ const STATS_PALETTE = ['#3559e0', '#e8702a', '#16a34a', '#db2777', '#7c3aed', '#
 function buildStatsChartSvg(months, series){
   const W = 880, H = 300, padL = 64, padR = 16, padT = 16, padB = 34;
   const cw = W - padL - padR, ch = H - padT - padB;
-  const maxVal = Math.max(1, ...series.flatMap(s => s.vals)) * 1.1;
+  // 純利益・純損失など負の値も取りうる系列があるので、0 を跨いで表示できるようにする
+  // （負の値が無ければ従来どおり 0 を下端にした表示になる）
+  const allVals = series.flatMap(s => s.vals);
+  const dataMax = Math.max(0, ...allVals), dataMin = Math.min(0, ...allVals);
+  const margin = Math.max(1, dataMax - dataMin) * 0.1;
+  const maxVal = dataMax + margin, minVal = dataMin - (dataMin < 0 ? margin : 0);
   const x = i => padL + (months.length > 1 ? i * cw / (months.length - 1) : cw / 2);
-  const y = v => padT + ch - (v / maxVal) * ch;
+  const y = v => padT + ch * (maxVal - v) / (maxVal - minVal);
   const gridN = 4;
   const gridLines = Array.from({length: gridN + 1}, (_, i) => {
-    const v = maxVal * i / gridN, yy = y(v);
+    const v = minVal + (maxVal - minVal) * i / gridN, yy = y(v);
     return `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W - padR}" y2="${yy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>
       <text x="${padL - 8}" y="${(yy + 4).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--muted)">${esc(money(v, bookCommodity()))}</text>`;
-  }).join('');
+  }).join('') + (minVal < 0 && maxVal > 0
+    ? `<line x1="${padL}" y1="${y(0).toFixed(1)}" x2="${W - padR}" y2="${y(0).toFixed(1)}" stroke="var(--border-strong)" stroke-width="1.5"/>` : '');
   const labelStep = Math.max(1, Math.ceil(months.length / 12));
   const xLabels = months.map((m, i) => (i % labelStep === 0 || i === months.length - 1)
     ? `<text x="${x(i).toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(m.replace('-', '/'))}</text>` : '').join('');
