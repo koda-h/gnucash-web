@@ -2141,6 +2141,8 @@ function aiPeriodLabel(period, range){
   const ym = iso => { const [y, m] = iso.split('-'); return `${y}年${+m}月`; };
   return period === 'all' ? `全期間（${ym(range.to)}まで）` : `${ym(range.from)} 〜 ${ym(range.to)}`;
 }
+// 子科目を持たない科目の名前（ルート直下の「資産」「費用」などは除いた、ツリー上のパス）
+const categoryLabel = id => path(id).slice(1).join('・');
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
@@ -2174,11 +2176,22 @@ async function buildAiContext(from, to){
   [...incomeRoots, ...expenseRoots].forEach(walk);
   const incomeTotal = incomeRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
   const expenseTotal = expenseRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
-  // 費用の内訳は科目ルート自身ではなく、損益計算書と同じくルート直下の科目（医療費・交通費など）で比較する
-  const expenseCategories = expenseRoots.flatMap(r => (CHILDREN[r] || []).filter(c => !A[c].hidden));
-  const topExpenses = expenseCategories
-    .map(id => ({id, v: (PERIOD_TOTAL[id] || 0) * sign(id)}))
-    .filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 3);
+  // 科目別の内訳は、個別の質問（「○○費はいくら？」等）にも答えられるよう全科目を対象にする。
+  // ロールアップされた親科目の値をそのまま並べると二重計上になるため、末端（子科目を持たない）
+  // 科目のみを対象にする（損益計算書の行はツリー表示なので二重計上にならないが、ここではフラットな
+  // 一覧としてAIに渡すため区別が必要）
+  const collectLeaves = (id, out) => {
+    if (A[id].hidden) return;
+    const kids = (CHILDREN[id] || []).filter(c => !A[c].hidden);
+    if (!kids.length) out.push(id); else kids.forEach(c => collectLeaves(c, out));
+  };
+  const leafCategories = roots => { const out = []; roots.forEach(r => (CHILDREN[r] || []).forEach(c => collectLeaves(c, out))); return out; };
+  const breakdown = (roots, sign_) => leafCategories(roots)
+    .map(id => ({id, v: (PERIOD_TOTAL[id] || 0) * sign_(id)}))
+    .filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  const expenses = breakdown(expenseRoots, sign);
+  const incomes = breakdown(incomeRoots, sign);
+  const topExpenses = expenses.slice(0, 3);
   // 純資産：最上位の資産・負債科目の合計（renderSidebar と同じ考え方。現在時点の値）
   let assets = 0, liab = 0;
   for (const id of ROOTS) {
@@ -2196,7 +2209,7 @@ async function buildAiContext(from, to){
     const topDesc = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([d]) => d);
     txDetails = {count: tx.count, topDesc};
   }
-  return {incomeTotal, expenseTotal, net: incomeTotal - expenseTotal, topExpenses,
+  return {incomeTotal, expenseTotal, net: incomeTotal - expenseTotal, topExpenses, expenses, incomes,
           nw: {assets, liab, total: assets - liab}, txDetails};
 }
 // Claude に渡す system プロンプト（集計済みの数値のみ。個別の取引明細は含めない）
@@ -2210,7 +2223,8 @@ function buildAiSystemPrompt(period, range, ctx){
     `費用合計: ${money(ctx.expenseTotal, c)}`,
     `${ctx.net >= 0 ? '純利益' : '純損失'}: ${money(Math.abs(ctx.net), c)}`,
   ];
-  if (ctx.topExpenses.length) lines.push(`費用の内訳（上位）: ${ctx.topExpenses.map(x => `${A[x.id].name} ${money(x.v, c)}`).join('、')}`);
+  if (ctx.expenses.length) lines.push(`費用の科目別内訳（全科目）: ${ctx.expenses.map(x => `${categoryLabel(x.id)} ${money(x.v, c)}`).join('、')}`);
+  if (ctx.incomes.length) lines.push(`収益の科目別内訳（全科目）: ${ctx.incomes.map(x => `${categoryLabel(x.id)} ${money(x.v, c)}`).join('、')}`);
   lines.push(`現在の純資産: ${money(ctx.nw.total, c)}（資産 ${money(ctx.nw.assets, c)}・負債 ${money(ctx.nw.liab, c)}）`);
   if (ctx.txDetails) lines.push(`この期間の取引件数: ${ctx.txDetails.count}件。よく登場する取引の説明: ${ctx.txDetails.topDesc.join('、') || '（なし）'}`);
   lines.push('この数値をもとに、日本語で、簡潔かつ具体的にアドバイスしてください。金額は¥記号とカンマ区切りで表記し、断定的な助言は避けつつ実用的な提案を心がけてください。');

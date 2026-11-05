@@ -2362,11 +2362,20 @@ async function buildAiContext(from, to){
   [...incomeRoots, ...expenseRoots].forEach(walk);
   const incomeTotal = incomeRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
   const expenseTotal = expenseRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
-  // 費用の内訳は科目ルート自身ではなく、損益計算書と同じくルート直下の科目（医療費・交通費など）で比較する
-  const expenseCategories = expenseRoots.flatMap(r => (CHILDREN[r] || []).filter(c => !A[c].hidden));
-  const topExpenses = expenseCategories
-    .map(id => ({id, v: (PERIOD_TOTAL[id] || 0) * sign(id)}))
-    .filter(x => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 3);
+  // 科目別の内訳は個別の質問にも答えられるよう全科目を対象にする（実装時はサーバー側で同様の集計を行う）。
+  // ロールアップされた親科目の値をそのまま並べると二重計上になるため、末端（子科目を持たない）科目のみを対象にする
+  const collectLeaves = (id, out) => {
+    if (A[id].hidden) return;
+    const kids = (CHILDREN[id] || []).filter(c => !A[c].hidden);
+    if (!kids.length) out.push(id); else kids.forEach(c => collectLeaves(c, out));
+  };
+  const leafCategories = roots => { const out = []; roots.forEach(r => (CHILDREN[r] || []).forEach(c => collectLeaves(c, out))); return out; };
+  const breakdown = (roots, sign_) => leafCategories(roots)
+    .map(id => ({id, v: (PERIOD_TOTAL[id] || 0) * sign_(id)}))
+    .filter(x => x.v > 0).sort((a, b) => b.v - a.v);
+  const expenses = breakdown(expenseRoots, sign);
+  const incomes = breakdown(incomeRoots, sign);
+  const topExpenses = expenses.slice(0, 3);
   let txDetails = null;
   // 設定でオンの場合のみ、取引の説明・メモ（最大200件、金額・科目は含めない）も取得する
   if (state.aiIncludeTxDetails) {
@@ -2376,7 +2385,7 @@ async function buildAiContext(from, to){
     const topDesc = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d]) => d);
     txDetails = {count: tx.count, topDesc};
   }
-  return {incomeTotal, expenseTotal, net: incomeTotal - expenseTotal, topExpenses, nw: netWorth(), txDetails};
+  return {incomeTotal, expenseTotal, net: incomeTotal - expenseTotal, topExpenses, expenses, incomes, nw: netWorth(), txDetails};
 }
 function aiSummaryMessage(period, range, ctx){
   const c = bookCommodity();
@@ -2395,6 +2404,12 @@ function mockAiReply(text, ctx){
   const c = bookCommodity();
   if (!ctx) return 'すみません、集計データが読み込めていません。';
   if (text === AI_OVERVIEW_PROMPT) return aiSummaryMessage(state.ai.period, state.ai.range, ctx);
+  // 科目名を含む質問には、その科目の金額で答える（全科目の内訳を持っているため、上位3科目以外にも対応できる）
+  for (const x of [...ctx.expenses, ...ctx.incomes]) {
+    if (A[x.id] && text.includes(A[x.id].name)) {
+      return `${A[x.id].name}は、${aiPeriodLabel(state.ai.period, state.ai.range)}の期間で${money(x.v, c)}でした。月別の内訳は現在の集計には含まれていません。`;
+    }
+  }
   if (/貯金|貯蓄|増やす/.test(text))
     return `現在の収支（${money(ctx.net, c)}）を維持できれば貯蓄は積み上がっていきます。費用の中で比重が大きい科目から見直すと、より早く目標に近づけそうです。`;
   if (/食費|外食|費用|節約|減らせ|何に使って/.test(text)) {
