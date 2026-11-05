@@ -2404,11 +2404,17 @@ function mockAiReply(text, ctx){
   const c = bookCommodity();
   if (!ctx) return 'すみません、集計データが読み込めていません。';
   if (text === AI_OVERVIEW_PROMPT) return aiSummaryMessage(state.ai.period, state.ai.range, ctx);
-  // 科目名を含む質問には、その科目の金額で答える（全科目の内訳を持っているため、上位3科目以外にも対応できる）
+  // 科目名を含む質問には、その科目の金額で答える（全科目の内訳を持っているため、上位3科目以外にも対応できる）。
+  // 「月別」「推移」などが含まれる場合は、実装時に用意するツール呼び出しを模して月別のダミー内訳を返す
   for (const x of [...ctx.expenses, ...ctx.incomes]) {
-    if (A[x.id] && text.includes(A[x.id].name)) {
-      return `${A[x.id].name}は、${aiPeriodLabel(state.ai.period, state.ai.range)}の期間で${money(x.v, c)}でした。月別の内訳は現在の集計には含まれていません。`;
+    if (!A[x.id] || !text.includes(A[x.id].name)) continue;
+    if (/月別|月ごと|推移|毎月/.test(text)) {
+      const months = monthsBetween(state.ai.range.from.slice(0, 7), state.ai.range.to.slice(0, 7));
+      const vals = mockMonthlySeries(x.id, months);
+      const ym = iso => { const [y, m] = iso.split('-'); return `${y}年${+m}月`; };
+      return `${A[x.id].name}の月別の内訳です（※ ダミー値）。\n${months.map((m, i) => `- ${ym(m)}: ${money(vals[i], c)}`).join('\n')}`;
     }
+    return `${A[x.id].name}は、${aiPeriodLabel(state.ai.period, state.ai.range)}の期間で${money(x.v, c)}でした。`;
   }
   if (/貯金|貯蓄|増やす/.test(text))
     return `現在の収支（${money(ctx.net, c)}）を維持できれば貯蓄は積み上がっていきます。費用の中で比重が大きい科目から見直すと、より早く目標に近づけそうです。`;

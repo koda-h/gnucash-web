@@ -1076,16 +1076,24 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(400, "サーバーに GNUCASH_AI_API_KEY が設定されていません")
         messages = payload.get("messages") or []
         context = payload.get("context") or ""
+        tools = payload.get("tools")
         if not isinstance(messages, list) or not messages:
             raise ApiError(400, "messages が必要です")
-        sent = [{"role": m.get("role"), "content": str(m.get("content", ""))}
+        # content はプレーンな文字列（通常の発言）か、ツール呼び出し・結果を表す
+        # ブロックの配列（tool_use / tool_result）のどちらか。そのまま転送する
+        sent = [{"role": m.get("role"), "content": m.get("content", "")}
                 for m in messages if m.get("role") in ("user", "assistant")]
         if not sent:
             raise ApiError(400, "messages が必要です")
         model = os.environ.get("GNUCASH_AI_MODEL", "claude-sonnet-5-5")
-        body = json.dumps({"model": model, "max_tokens": self.AI_MAX_TOKENS,
-                            "system": context, "messages": sent}).encode()
-        req = urllib.request.Request(self.AI_API_URL, data=body, method="POST", headers={
+        body = {"model": model, "max_tokens": self.AI_MAX_TOKENS, "messages": sent}
+        if context:
+            # system プロンプト（集計データ）は会話中は変わらないため、プロンプトキャッシュの
+            # 対象にする。同じ内容を毎回の往復で送り直すことになるこの設計での料金対策
+            body["system"] = [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}]
+        if tools:
+            body["tools"] = tools
+        req = urllib.request.Request(self.AI_API_URL, data=json.dumps(body).encode(), method="POST", headers={
             "x-api-key": api_key, "anthropic-version": self.AI_API_VERSION,
             "content-type": "application/json"})
         try:
@@ -1100,12 +1108,18 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(502, f"AI APIの呼び出しに失敗しました（{e.code}）: {detail[:300]}")
         except urllib.error.URLError as e:
             raise ApiError(502, f"AI APIに接続できませんでした: {e.reason}")
-        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-        if not text:
+        content = data.get("content") or []
+        if not content:
             raise ApiError(502, "AI APIから応答を取得できませんでした")
-        if data.get("stop_reason") == "max_tokens":
-            text += "\n\n（※ 回答が長くなったため途中で切れています。続きを聞きたい場合はそのまま質問してください）"
-        return {"reply": text}
+        stop_reason = data.get("stop_reason")
+        if stop_reason == "max_tokens":
+            note = "\n\n（※ 回答が長くなったため途中で切れています。続きを聞きたい場合はそのまま質問してください）"
+            text_blocks = [b for b in content if b.get("type") == "text"]
+            if text_blocks:
+                text_blocks[-1]["text"] = text_blocks[-1].get("text", "") + note
+            else:
+                content.append({"type": "text", "text": note.strip()})
+        return {"content": content, "stopReason": stop_reason}
 
     def _route(self, method):
         url = urlparse(self.path)

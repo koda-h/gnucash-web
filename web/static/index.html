@@ -2143,6 +2143,25 @@ function aiPeriodLabel(period, range){
 }
 // 子科目を持たない科目の名前（ルート直下の「資産」「費用」などは除いた、ツリー上のパス）
 const categoryLabel = id => path(id).slice(1).join('・');
+// 末端（子科目を持たない）科目を集める。ロールアップ済みの親科目の値をそのまま並べると
+// 二重計上になるため、科目別の内訳は常にこれを対象にする
+function collectLeafAccounts(id, out){
+  if (A[id].hidden) return;
+  const kids = (CHILDREN[id] || []).filter(c => !A[c].hidden);
+  if (!kids.length) out.push(id); else kids.forEach(c => collectLeafAccounts(c, out));
+}
+function leafCategoriesOf(roots){
+  const out = [];
+  roots.forEach(r => (CHILDREN[r] || []).forEach(c => collectLeafAccounts(c, out)));
+  return out;
+}
+// ルート直下の全科目（末端・親の両方）。AIからの科目名指定（親科目名の場合もある）の解決に使う
+function allCategoriesOf(roots){
+  const out = [];
+  const walk = id => { if (A[id].hidden) return; out.push(id); (CHILDREN[id] || []).filter(c => !A[c].hidden).forEach(walk); };
+  roots.forEach(r => (CHILDREN[r] || []).forEach(walk));
+  return out;
+}
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
@@ -2176,17 +2195,8 @@ async function buildAiContext(from, to){
   [...incomeRoots, ...expenseRoots].forEach(walk);
   const incomeTotal = incomeRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
   const expenseTotal = expenseRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
-  // 科目別の内訳は、個別の質問（「○○費はいくら？」等）にも答えられるよう全科目を対象にする。
-  // ロールアップされた親科目の値をそのまま並べると二重計上になるため、末端（子科目を持たない）
-  // 科目のみを対象にする（損益計算書の行はツリー表示なので二重計上にならないが、ここではフラットな
-  // 一覧としてAIに渡すため区別が必要）
-  const collectLeaves = (id, out) => {
-    if (A[id].hidden) return;
-    const kids = (CHILDREN[id] || []).filter(c => !A[c].hidden);
-    if (!kids.length) out.push(id); else kids.forEach(c => collectLeaves(c, out));
-  };
-  const leafCategories = roots => { const out = []; roots.forEach(r => (CHILDREN[r] || []).forEach(c => collectLeaves(c, out))); return out; };
-  const breakdown = (roots, sign_) => leafCategories(roots)
+  // 科目別の内訳は、個別の質問（「○○費はいくら？」等）にも答えられるよう全科目（末端科目）を対象にする
+  const breakdown = (roots, sign_) => leafCategoriesOf(roots)
     .map(id => ({id, v: (PERIOD_TOTAL[id] || 0) * sign_(id)}))
     .filter(x => x.v > 0).sort((a, b) => b.v - a.v);
   const expenses = breakdown(expenseRoots, sign);
@@ -2232,6 +2242,74 @@ function buildAiSystemPrompt(period, range, ctx){
 }
 const AI_OVERVIEW_PROMPT = '家計の状況について、概況と気になる点を教えてください。';
 function askAiOverview(){ return sendAiText(AI_OVERVIEW_PROMPT); }
+// 月別の内訳は常には送らず、AIが必要と判断したときだけこのツールで取得させる
+const AI_TOOLS = [{
+  name: 'get_monthly_breakdown',
+  description: '指定した科目、または費用合計・収益合計について、分析対象期間内の月ごとの金額（円）を取得します。月別の推移や特定の月の金額を聞かれたときに使ってください。',
+  input_schema: {
+    type: 'object',
+    properties: {
+      category: {type: 'string', description: 'system プロンプトの内訳に出てくる科目名（例：「食費」「公共料金・電気」）。費用全体の推移なら「費用合計」、収益全体なら「収益合計」を指定してください。'},
+    },
+    required: ['category'],
+  },
+}];
+// AIが指定した科目名を解決する。system プロンプトでは末端科目しか渡していないが、
+// 「税金」のような親科目でまとめて聞かれることもあるため、親・末端どちらにもマッチさせる
+function resolveAiCategory(name){
+  if (!name) return null;
+  const t = name.trim();
+  if (/^(費用|支出)(合計)?$/.test(t)) return {kind: 'expenseTotal'};
+  if (/^(収益|収入)(合計)?$/.test(t)) return {kind: 'incomeTotal'};
+  const incomeRoots = ROOTS.filter(r => A[r].type === 'INCOME' && !A[r].hidden);
+  const expenseRoots = ROOTS.filter(r => A[r].type === 'EXPENSE' && !A[r].hidden);
+  const all = [...allCategoriesOf(expenseRoots), ...allCategoriesOf(incomeRoots)];
+  const hit = all.find(id => categoryLabel(id) === t)
+    || all.find(id => A[id]?.name === t)
+    || all.find(id => categoryLabel(id).includes(t) || (A[id]?.name && t.includes(A[id].name)));
+  return hit ? {kind: 'account', id: hit} : null;
+}
+async function getMonthlyBreakdown(name){
+  const st = state.ai;
+  const target = resolveAiCategory(name);
+  if (!target) return `「${name}」という科目は見つかりませんでした。`;
+  const from = st.range.from.slice(0, 7), to = st.range.to.slice(0, 7);
+  const ym = iso => { const [y, m] = iso.split('-'); return `${y}年${+m}月`; };
+  const c = bookCommodity();
+  let guids;
+  if (target.kind === 'account') {
+    // 親科目（子科目を持つ）が指定された場合は、末端の子科目をまとめて合算する（own 値のみ対象なので二重計上にならない）
+    const kids = (CHILDREN[target.id] || []).filter(k => !A[k].hidden);
+    guids = kids.length ? leafCategoriesOf([target.id]) : [target.id];
+  } else {
+    // 費用合計・収益合計は、own 値（ロールアップしない値）をルート配下の全科目で合算することで正しい合計になる
+    const roots = ROOTS.filter(r => A[r].type === (target.kind === 'expenseTotal' ? 'EXPENSE' : 'INCOME') && !A[r].hidden);
+    guids = allCategoriesOf(roots);
+  }
+  if (!guids.length) return '該当する科目がありませんでした。';
+  const res = await api('GET', `/api/reports/account-history?from=${from}&to=${to}&accounts=${guids.join(',')}`);
+  const months = res.months;
+  const totals = months.map((_, i) => guids.reduce((sum, id) => sum + (res.series[id]?.[i] || 0) * sign(id), 0));
+  return months.map((m, i) => `${ym(m)}: ${money(totals[i], c)}`).join('\n');
+}
+// AI の呼び出しとツール呼び出し（tool_use）の解決を往復する。往復は最大3回まで
+async function callAi(st){
+  for (let i = 0; i < 3; i++) {
+    const res = await api('POST', '/api/ai/chat', {messages: st.messages, context: st.systemPrompt, tools: AI_TOOLS});
+    const toolUses = res.content.filter(b => b.type === 'tool_use');
+    if (res.stopReason !== 'tool_use' || !toolUses.length) {
+      const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+      st.messages.push({role: 'assistant', content: text || '（回答を取得できませんでした）'});
+      return;
+    }
+    st.messages.push({role: 'assistant', content: res.content});
+    const results = await Promise.all(toolUses.map(async tu => ({
+      type: 'tool_result', tool_use_id: tu.id, content: await getMonthlyBreakdown(tu.input?.category),
+    })));
+    st.messages.push({role: 'user', content: results});
+  }
+  st.messages.push({role: 'assistant', content: 'すみません、うまく回答をまとめられませんでした。', error: true});
+}
 async function sendAiText(text){
   const st = state.ai;
   if (!text || st.loading) return;
@@ -2240,8 +2318,7 @@ async function sendAiText(text){
   render({scrollBottom: true});
   try {
     await ensureAiContext();
-    const res = await api('POST', '/api/ai/chat', {messages: st.messages, context: st.systemPrompt});
-    st.messages.push({role: 'assistant', content: res.reply});
+    await callAi(st);
   } catch (e) {
     st.messages.push({role: 'assistant', content: `すみません、AIの呼び出しに失敗しました（${e.message}）。`, error: true});
   }
@@ -2284,6 +2361,7 @@ function renderMarkdown(text){
   return html;
 }
 function aiBubble(m){
+  if (Array.isArray(m.content)) return '';   // ツール呼び出し・結果のやり取りは表示しない
   const body = m.role === 'assistant' ? renderMarkdown(m.content) : esc(m.content).replace(/\n/g, '<br>');
   return `<div class="ai-msg ${m.role}${m.error ? ' error' : ''}">${body}</div>`;
 }
