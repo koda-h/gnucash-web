@@ -13,6 +13,9 @@ GNUCASH_FORCE / GNUCASH_BACKUP_DIR でも指定できる（Docker 用）。
 パスキー認証（GNUCASH_AUTH=1）を使う場合は py_webauthn が必要（pip install -r requirements.txt）。
 設定は GNUCASH_AUTH_RP_ID / GNUCASH_AUTH_ORIGIN / GNUCASH_AUTH_SESSION_DAYS / GNUCASH_AUTH_FILE。
 
+AI分析機能（画面の「AI分析」）を使うには GNUCASH_AI_API_KEY（Anthropic の API キー）が必要。
+モデルは GNUCASH_AI_MODEL で変更できる（既定 claude-sonnet-5-5）。未設定でもそれ以外の機能は使える。
+
 スキーマは docs/gnucash-db-schema.md を参照。
 """
 import argparse
@@ -32,6 +35,8 @@ from fractions import Fraction
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
+import urllib.error
+import urllib.request
 
 STATIC_DIR = Path(__file__).parent / "static"
 # 既定のデータファイル（プロジェクト直下の data/。Git では管理しない）
@@ -122,6 +127,7 @@ class Book:
         self.writable = writable
         self.force = force
         self._mf_lock = threading.Lock()
+        self._settings_lock = threading.Lock()
 
     def connect(self):
         if self.writable:
@@ -419,6 +425,36 @@ class Book:
                     vals.append(to_number(s, fraction))
             series[g] = vals
         return {"months": months, "series": series}
+
+    def transactions_in_range(self, frm, to, limit=200):
+        """AI分析（「取引の説明・メモを考慮する」設定がオンの場合向け）：指定期間の取引から、
+        説明とメモだけを新しい順に返す。金額・科目・GUIDは含めない（AIに渡す情報を
+        説明・メモのテキストだけに絞るため）"""
+        try:
+            d_from, d_to = date.fromisoformat(frm), date.fromisoformat(to)
+        except ValueError:
+            raise ApiError(400, "期間が正しくありません")
+        limit = max(1, min(int(limit), 1000))
+        start = datetime.combine(d_from, dtime.min).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        end = datetime.combine(d_to, dtime.max).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        with self.connect() as con:
+            tx_rows = con.execute(f"""
+                select t.guid, t.description, t.post_date
+                from transactions t
+                where {NORM_POST_DATE} between ? and ?
+                order by {NORM_POST_DATE} desc
+                limit ?""", (start, end, limit)).fetchall()
+            guids = [r["guid"] for r in tx_rows]
+            memos = {}
+            if guids:
+                qmarks = ",".join("?" * len(guids))
+                for r in con.execute(f"""
+                        select tx_guid, memo from splits
+                        where tx_guid in ({qmarks}) and memo is not null and memo != ''""", guids):
+                    memos.setdefault(r["tx_guid"], set()).add(r["memo"])
+        rows = [{"date": local_date(r["post_date"]), "desc": r["description"] or "",
+                 "memos": sorted(memos.get(r["guid"], []))} for r in tx_rows]
+        return {"from": frm, "to": to, "count": len(rows), "rows": rows}
 
     def search_transactions(self, q, limit=200):
         """取引検索：期間を問わず全取引から、説明またはいずれかの分割のメモに q を含むものを
@@ -954,6 +990,48 @@ class Book:
                 self._save_mf_import(d)
         return {"created": created}
 
+    # ---- アプリ設定の永続化
+    # GnuCash の SQLite とは別に、同じフォルダの app-settings.json に保存する
+    # （mf-import.json・auth.json と同じ置き場所の流儀。会計データのスキーマには触れない）
+
+    DEFAULT_SETTINGS = {"aiIncludeTxDetails": False}
+
+    def _settings_path(self):
+        return Path(self.path).parent / "app-settings.json"
+
+    def _load_settings(self):
+        p = self._settings_path()
+        if not p.exists():
+            return dict(self.DEFAULT_SETTINGS)
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return dict(self.DEFAULT_SETTINGS)
+        return {"aiIncludeTxDetails": bool(data.get("aiIncludeTxDetails", False))}
+
+    def _save_settings(self, data):
+        p = self._settings_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+
+    def get_settings(self):
+        with self._settings_lock:
+            d = self._load_settings()
+        # aiAvailable は保存された設定ではなく、サーバーに API キーがあるかどうかをその場で返す
+        # （フロント側で「分析を開始」前にAI機能が使えるか案内するため）
+        d["aiAvailable"] = bool(os.environ.get("GNUCASH_AI_API_KEY"))
+        return d
+
+    def update_settings(self, patch):
+        with self._settings_lock:
+            d = self._load_settings()
+            if "aiIncludeTxDetails" in patch:
+                d["aiIncludeTxDetails"] = bool(patch["aiIncludeTxDetails"])
+            self._save_settings(d)
+            return d
+
 
 # ---------------------------------------------------------------- HTTP
 
@@ -984,6 +1062,48 @@ class Handler(BaseHTTPRequestHandler):
             return json.loads(self.rfile.read(n) or b"{}")
         except json.JSONDecodeError:
             raise ApiError(400, "JSON が不正です")
+
+    # ---- AI分析：Claude（Anthropic）への中継
+    # 集計はすべてフロント側（JS）で組み立て、ここではその system プロンプトと会話履歴を
+    # そのまま Anthropic の Messages API に転送するだけ（API キーをフロントに渡さないための中継）
+    AI_API_URL = "https://api.anthropic.com/v1/messages"
+    AI_API_VERSION = "2023-06-01"
+    AI_MAX_TOKENS = 1024
+
+    def ai_chat(self, payload):
+        api_key = os.environ.get("GNUCASH_AI_API_KEY")
+        if not api_key:
+            raise ApiError(400, "サーバーに GNUCASH_AI_API_KEY が設定されていません")
+        messages = payload.get("messages") or []
+        context = payload.get("context") or ""
+        if not isinstance(messages, list) or not messages:
+            raise ApiError(400, "messages が必要です")
+        sent = [{"role": m.get("role"), "content": str(m.get("content", ""))}
+                for m in messages if m.get("role") in ("user", "assistant")]
+        if not sent:
+            raise ApiError(400, "messages が必要です")
+        model = os.environ.get("GNUCASH_AI_MODEL", "claude-sonnet-5-5")
+        body = json.dumps({"model": model, "max_tokens": self.AI_MAX_TOKENS,
+                            "system": context, "messages": sent}).encode()
+        req = urllib.request.Request(self.AI_API_URL, data=body, method="POST", headers={
+            "x-api-key": api_key, "anthropic-version": self.AI_API_VERSION,
+            "content-type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")
+            try:
+                detail = json.loads(detail).get("error", {}).get("message", detail)
+            except ValueError:
+                pass
+            raise ApiError(502, f"AI APIの呼び出しに失敗しました（{e.code}）: {detail[:300]}")
+        except urllib.error.URLError as e:
+            raise ApiError(502, f"AI APIに接続できませんでした: {e.reason}")
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        if not text:
+            raise ApiError(502, "AI APIから応答を取得できませんでした")
+        return {"reply": text}
 
     def _route(self, method):
         url = urlparse(self.path)
@@ -1039,6 +1159,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, b.account_history(frm, to, accounts))
         if method == "GET" and p == "/api/search":
             return self._send(200, b.search_transactions(qs.get("q", [""])[0]))
+        if method == "GET" and p == "/api/reports/transactions":
+            frm, to = qs.get("from", [""])[0], qs.get("to", [""])[0]
+            if not frm or not to:
+                raise ApiError(400, "from・to が必要です")
+            try:
+                limit = int(qs.get("limit", ["200"])[0])
+            except ValueError:
+                raise ApiError(400, "limit が正しくありません")
+            return self._send(200, b.transactions_in_range(frm, to, limit))
+        if method == "GET" and p == "/api/settings":
+            return self._send(200, b.get_settings())
+        if method == "PUT" and p == "/api/settings":
+            return self._send(200, b.update_settings(self._body()))
+        if method == "POST" and p == "/api/ai/chat":
+            return self._send(200, self.ai_chat(self._body()))
         if method == "GET" and p == "/api/mf-import/mappings":
             return self._send(200, b.mf_import_mappings())
         if method == "POST" and p == "/api/mf-import/mappings":
