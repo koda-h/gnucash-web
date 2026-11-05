@@ -541,8 +541,8 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-period-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .ai-period-side{display:flex;align-items:center;gap:8px}
 .ai-scroll{padding:16px 20px;display:flex;flex-direction:column;gap:10px}
-.ai-msg{max-width:78%;padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.6}
-.ai-msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
+.ai-msg{max-width:92%;padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.6}
+.ai-msg.user{max-width:78%;align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
 .ai-msg.assistant{align-self:flex-start;background:var(--surface-2);color:var(--text);border-bottom-left-radius:4px}
 .ai-msg.assistant.error{background:var(--neg-soft);color:var(--neg)}
 .ai-msg p{margin:0 0 8px}
@@ -552,6 +552,15 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-msg li{margin:2px 0}
 .ai-msg strong{font-weight:700}
 .ai-msg em{font-style:italic}
+.ai-msg h3,.ai-msg h4,.ai-msg h5,.ai-msg h6{margin:10px 0 6px;font-weight:700;line-height:1.4}
+.ai-msg :first-child{margin-top:0}
+.ai-msg h3{font-size:15px}
+.ai-msg h4{font-size:14px}
+.ai-msg h5,.ai-msg h6{font-size:13.5px}
+.ai-msg table{display:block;overflow-x:auto;border-collapse:collapse;width:max-content;max-width:100%;margin:4px 0 10px;font-size:12.5px}
+.ai-msg table:last-child{margin-bottom:0}
+.ai-msg th,.ai-msg td{border:1px solid var(--border);padding:4px 9px;text-align:left;white-space:nowrap}
+.ai-msg th{font-weight:600;background:var(--surface)}
 .ai-typing{display:flex;gap:4px;padding:12px 15px}
 .ai-typing span{width:6px;height:6px;border-radius:50%;background:var(--muted);animation:ai-bounce 1.1s infinite ease-in-out}
 .ai-typing span:nth-child(2){animation-delay:.15s}
@@ -2338,13 +2347,34 @@ function renderMarkdown(text){
   const inline = s => escHtml(s)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+  const splitRow = line => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  const isTableSep = line => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
   const lines = (text || '').split('\n');
-  let html = '', para = [], list = null;
+  let html = '', para = [], list = null, i = 0;
   const flushPara = () => { if (para.length) { html += `<p>${para.map(inline).join('<br>')}</p>`; para = []; } };
   const flushList = () => { if (list) { html += `<${list.type}>${list.items.map(i => `<li>${inline(i)}</li>`).join('')}</${list.type}>`; list = null; } };
-  for (const line of lines) {
+  while (i < lines.length) {
+    const line = lines[i];
+    const heading = line.match(/^(#{1,6})\s+(.*)/);
     const ul = line.match(/^\s*[-*]\s+(.*)/);
     const ol = line.match(/^\s*\d+\.\s+(.*)/);
+    // 表（GFM形式）：次の行が「|---|---|」のような区切り行なら表の開始とみなす
+    if (line.includes('|') && lines[i + 1] !== undefined && isTableSep(lines[i + 1])) {
+      flushPara(); flushList();
+      const header = splitRow(line);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') { rows.push(splitRow(lines[i])); i++; }
+      html += `<table><thead><tr>${header.map(h => `<th>${inline(h)}</th>`).join('')}</tr></thead>`
+        + `<tbody>${rows.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      continue;
+    }
+    if (heading) {
+      flushPara(); flushList();
+      const tag = `h${Math.min(heading[1].length + 2, 6)}`;
+      html += `<${tag}>${inline(heading[2])}</${tag}>`;
+      i++; continue;
+    }
     if (ul || ol) {
       flushPara();
       const type = ul ? 'ul' : 'ol';
@@ -2356,6 +2386,7 @@ function renderMarkdown(text){
       flushList();
       para.push(line);
     }
+    i++;
   }
   flushPara(); flushList();
   return html;
