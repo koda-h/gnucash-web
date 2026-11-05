@@ -1068,7 +1068,7 @@ class Handler(BaseHTTPRequestHandler):
     # そのまま Anthropic の Messages API に転送するだけ（API キーをフロントに渡さないための中継）
     AI_API_URL = "https://api.anthropic.com/v1/messages"
     AI_API_VERSION = "2023-06-01"
-    AI_MAX_TOKENS = 1024
+    AI_MAX_TOKENS = 4096
 
     def ai_chat(self, payload):
         api_key = os.environ.get("GNUCASH_AI_API_KEY")
@@ -1103,6 +1103,8 @@ class Handler(BaseHTTPRequestHandler):
         text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
         if not text:
             raise ApiError(502, "AI APIから応答を取得できませんでした")
+        if data.get("stop_reason") == "max_tokens":
+            text += "\n\n（※ 回答が長くなったため途中で切れています。続きを聞きたい場合はそのまま質問してください）"
         return {"reply": text}
 
     def _route(self, method):
