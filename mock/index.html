@@ -2342,11 +2342,47 @@ function aiPeriodLabel(period, range){
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
-  if (!state.ai) state.ai = {period: '1y', range: null, contextPeriod: null, context: null, messages: [], loading: false};
+  if (!state.ai) {
+    state.ai = {period: '1y', range: null, contextPeriod: null, context: null, messages: [], loading: false};
+    loadAiConversation();
+  }
   app.classList.add('show-main');
   render();
 }
 document.getElementById('navAi').onclick = () => openAi();
+// 会話の保存（本番はサーバー側の ai-conversation.json。モックは localStorage で代用）
+const AI_CONV_KEY = 'aiConversation';
+const AI_MAX_EXCHANGES = 20;
+// 可視のユーザー発言（content が文字列）を境界に往復単位でグループ化し、直近 AI_MAX_EXCHANGES 件だけ残す
+function trimAiMessages(messages){
+  const groups = [];
+  for (const m of messages) {
+    if (m.role === 'user' && typeof m.content === 'string') groups.push([m]);
+    else if (groups.length) groups[groups.length - 1].push(m);
+  }
+  return groups.slice(-AI_MAX_EXCHANGES).flat();
+}
+function loadAiConversation(){
+  try {
+    const s = localStorage.getItem(AI_CONV_KEY);
+    const conv = s ? JSON.parse(s) : null;
+    if (conv?.messages?.length) {
+      state.ai.messages = conv.messages;
+      if (conv.period) state.ai.period = conv.period;
+      state.ai.contextPeriod = null;
+      render();
+    }
+  } catch (e) {}
+}
+function saveAiConversation(st){
+  st.messages = trimAiMessages(st.messages);
+  try { localStorage.setItem(AI_CONV_KEY, JSON.stringify({period: st.period, messages: st.messages})); } catch (e) {}
+}
+function clearAiConversation(){
+  state.ai.messages = [];
+  render();
+  try { localStorage.removeItem(AI_CONV_KEY); } catch (e) {}
+}
 // 期間に対応する集計データがまだ無い・古い（期間を変更した）場合だけ組み立て直す
 async function ensureAiContext(){
   const st = state.ai;
@@ -2447,6 +2483,7 @@ async function sendAiText(text){
     st.messages.push({role: 'assistant', content: mockAiReply(text, st.context)});
     st.loading = false;
     render({scrollBottom: true});
+    saveAiConversation(st);
   }, 900);
 }
 async function sendAiMessage(form){
@@ -2547,7 +2584,7 @@ function renderAi(){
         <input name="msg" placeholder="質問を入力（例：貯金を増やすには？）" autocomplete="off" ${st.loading ? 'disabled' : ''}>
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
-      <div class="hint ai-hint">※ イメージ確認用のダミー回答です。実装時は実際のAIが回答します。</div>
+      <div class="hint ai-hint">※ イメージ確認用のダミー回答です。実装時は実際のAIが回答します。会話は自動的に保存され、直近20往復分のみ保持されます（古いやり取りは自動的に削除されます）。</div>
     </div>`;
 }
 
@@ -3284,7 +3321,7 @@ main.addEventListener('click', e => {
   }
   if (t.closest('#statsAddAcct')) return addStatsAccount();
   if (t.closest('#aiOverview')) return askAiOverview();
-  if (t.closest('#aiClear')) { state.ai.messages = []; render(); return; }
+  if (t.closest('#aiClear')) { clearAiConversation(); return; }
   const aip = t.closest('[data-ai-period]'); if (aip) { state.ai.period = aip.dataset.aiPeriod; render(); return; }
   if (t.closest('[data-settings]')) return openSettings();
   const statsRemove = t.closest('[data-stats-remove]');

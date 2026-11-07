@@ -128,6 +128,7 @@ class Book:
         self.force = force
         self._mf_lock = threading.Lock()
         self._settings_lock = threading.Lock()
+        self._conversation_lock = threading.Lock()
 
     def connect(self):
         if self.writable:
@@ -1032,6 +1033,70 @@ class Book:
             self._save_settings(d)
             return d
 
+    # ---- AI分析：会話履歴の永続化
+    # 同じフォルダの ai-conversation.json に、会話を1本だけ保存する（複数保存はしない）。
+    # 毎回のやり取りで会話全体をAnthropicに送り直す設計のため、無期限に保存すると1回あたりの
+    # 料金・応答時間が伸び続けてしまう。そのため保存のたびに直近 AI_MAX_EXCHANGES 往復だけ残す
+
+    AI_MAX_EXCHANGES = 20
+
+    def _conversation_path(self):
+        return Path(self.path).parent / "ai-conversation.json"
+
+    def _load_conversation(self):
+        p = self._conversation_path()
+        if not p.exists():
+            return {"period": None, "messages": [], "updatedAt": None}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"period": None, "messages": [], "updatedAt": None}
+        messages = data.get("messages")
+        if not isinstance(messages, list):
+            messages = []
+        return {"period": data.get("period"), "messages": messages, "updatedAt": data.get("updatedAt")}
+
+    def _save_conversation_file(self, data):
+        p = self._conversation_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+
+    @staticmethod
+    def _trim_conversation(messages):
+        # 可視のユーザー発言（content が文字列）を境界に往復単位でグループ化し、直近
+        # AI_MAX_EXCHANGES 件だけ残す（ツール呼び出し用の非表示メッセージはその往復に含めて一緒に残す）
+        groups = []
+        for m in messages:
+            if m.get("role") == "user" and isinstance(m.get("content"), str):
+                groups.append([m])
+            elif groups:
+                groups[-1].append(m)
+        kept = groups[-Book.AI_MAX_EXCHANGES:]
+        return [m for g in kept for m in g]
+
+    def get_conversation(self):
+        with self._conversation_lock:
+            return self._load_conversation()
+
+    def save_conversation(self, payload):
+        messages = payload.get("messages")
+        if not isinstance(messages, list):
+            raise ApiError(400, "messages が必要です")
+        data = {"period": payload.get("period"), "messages": self._trim_conversation(messages),
+                "updatedAt": datetime.now(timezone.utc).isoformat()}
+        with self._conversation_lock:
+            self._save_conversation_file(data)
+        return data
+
+    def clear_conversation(self):
+        with self._conversation_lock:
+            p = self._conversation_path()
+            if p.exists():
+                p.unlink()
+        return {"ok": True}
+
 
 # ---------------------------------------------------------------- HTTP
 
@@ -1065,12 +1130,14 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- AI分析：Claude（Anthropic）への中継
     # 集計はすべてフロント側（JS）で組み立て、ここではその system プロンプトと会話履歴を
-    # そのまま Anthropic の Messages API に転送するだけ（API キーをフロントに渡さないための中継）
+    # そのまま Anthropic の Messages API に転送するだけ（API キーをフロントに渡さないための中継）。
+    # レスポンスは Anthropic 側で stream: true にして取得し、テキストが生成されるたびに
+    # NDJSON（1行1イベントの JSON）としてそのままクライアントへ中継する（チャットらしく逐次表示するため）
     AI_API_URL = "https://api.anthropic.com/v1/messages"
     AI_API_VERSION = "2023-06-01"
     AI_MAX_TOKENS = 4096
 
-    def ai_chat(self, payload):
+    def ai_chat_stream(self, payload):
         api_key = os.environ.get("GNUCASH_AI_API_KEY")
         if not api_key:
             raise ApiError(400, "サーバーに GNUCASH_AI_API_KEY が設定されていません")
@@ -1086,7 +1153,7 @@ class Handler(BaseHTTPRequestHandler):
         if not sent:
             raise ApiError(400, "messages が必要です")
         model = os.environ.get("GNUCASH_AI_MODEL", "claude-sonnet-5-5")
-        body = {"model": model, "max_tokens": self.AI_MAX_TOKENS, "messages": sent}
+        body = {"model": model, "max_tokens": self.AI_MAX_TOKENS, "messages": sent, "stream": True}
         if context:
             # system プロンプト（集計データ）は会話中は変わらないため、プロンプトキャッシュの
             # 対象にする。同じ内容を毎回の往復で送り直すことになるこの設計での料金対策
@@ -1097,8 +1164,7 @@ class Handler(BaseHTTPRequestHandler):
             "x-api-key": api_key, "anthropic-version": self.AI_API_VERSION,
             "content-type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read())
+            upstream = urllib.request.urlopen(req, timeout=60)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")
             try:
@@ -1108,10 +1174,76 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(502, f"AI APIの呼び出しに失敗しました（{e.code}）: {detail[:300]}")
         except urllib.error.URLError as e:
             raise ApiError(502, f"AI APIに接続できませんでした: {e.reason}")
-        content = data.get("content") or []
+
+        # ここから先はレスポンスヘッダをもう送ってしまうため、エラーも _handle の
+        # ApiError 処理ではなく NDJSON の error イベントとしてクライアントへ伝える
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "same-origin")
+        self.end_headers()
+
+        def emit(obj):
+            try:
+                self.wfile.write((json.dumps(obj, ensure_ascii=False) + "\n").encode())
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                pass
+
+        blocks, stop_reason = [], None
+        try:
+            with upstream:
+                for raw_line in upstream:
+                    line = raw_line.decode("utf-8", "replace").strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        ev = json.loads(line[len("data:"):].strip())
+                    except ValueError:
+                        continue
+                    et = ev.get("type")
+                    if et == "content_block_start":
+                        idx = ev["index"]
+                        while len(blocks) <= idx:
+                            blocks.append(None)
+                        blocks[idx] = dict(ev["content_block"])
+                    elif et == "content_block_delta":
+                        idx, delta = ev["index"], ev.get("delta") or {}
+                        if delta.get("type") == "text_delta":
+                            text = delta.get("text", "")
+                            blocks[idx]["text"] = blocks[idx].get("text", "") + text
+                            emit({"type": "text_delta", "text": text})
+                        elif delta.get("type") == "input_json_delta":
+                            blocks[idx]["_json_buf"] = blocks[idx].get("_json_buf", "") + delta.get("partial_json", "")
+                        elif delta.get("type") == "thinking_delta":
+                            # 既定のモデルは thinking が有効（表示はされないが、往復時に元のまま
+                            # 送り返す必要がある）。ここで拾わないと次のターンで空の thinking
+                            # ブロックを送り返すことになり、Anthropic 側で 400 エラーになる
+                            blocks[idx]["thinking"] = blocks[idx].get("thinking", "") + delta.get("thinking", "")
+                        elif delta.get("type") == "signature_delta":
+                            blocks[idx]["signature"] = blocks[idx].get("signature", "") + delta.get("signature", "")
+                    elif et == "content_block_stop":
+                        b = blocks[ev["index"]]
+                        if "_json_buf" in b:
+                            try:
+                                b["input"] = json.loads(b.pop("_json_buf") or "{}")
+                            except ValueError:
+                                b["input"] = {}
+                    elif et == "message_delta":
+                        stop_reason = (ev.get("delta") or {}).get("stop_reason", stop_reason)
+                    elif et == "error":
+                        emit({"type": "error", "message": (ev.get("error") or {}).get("message") or "AI APIエラー"})
+                        return
+        except Exception as e:
+            emit({"type": "error", "message": f"AI APIへの接続が切れました: {e}"})
+            return
+
+        content = [b for b in blocks if b]
         if not content:
-            raise ApiError(502, "AI APIから応答を取得できませんでした")
-        stop_reason = data.get("stop_reason")
+            emit({"type": "error", "message": "AI APIから応答を取得できませんでした"})
+            return
         if stop_reason == "max_tokens":
             note = "\n\n（※ 回答が長くなったため途中で切れています。続きを聞きたい場合はそのまま質問してください）"
             text_blocks = [b for b in content if b.get("type") == "text"]
@@ -1119,7 +1251,8 @@ class Handler(BaseHTTPRequestHandler):
                 text_blocks[-1]["text"] = text_blocks[-1].get("text", "") + note
             else:
                 content.append({"type": "text", "text": note.strip()})
-        return {"content": content, "stopReason": stop_reason}
+            emit({"type": "text_delta", "text": note})
+        emit({"type": "done", "content": content, "stopReason": stop_reason})
 
     def _route(self, method):
         url = urlparse(self.path)
@@ -1188,8 +1321,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, b.get_settings())
         if method == "PUT" and p == "/api/settings":
             return self._send(200, b.update_settings(self._body()))
-        if method == "POST" and p == "/api/ai/chat":
-            return self._send(200, self.ai_chat(self._body()))
+        if method == "POST" and p == "/api/ai/chat/stream":
+            return self.ai_chat_stream(self._body())
+        if method == "GET" and p == "/api/ai/conversation":
+            return self._send(200, b.get_conversation())
+        if method == "PUT" and p == "/api/ai/conversation":
+            return self._send(200, b.save_conversation(self._body()))
+        if method == "DELETE" and p == "/api/ai/conversation":
+            return self._send(200, b.clear_conversation())
         if method == "GET" and p == "/api/mf-import/mappings":
             return self._send(200, b.mf_import_mappings())
         if method == "POST" and p == "/api/mf-import/mappings":

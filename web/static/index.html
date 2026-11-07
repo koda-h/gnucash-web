@@ -545,6 +545,7 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-msg.user{max-width:78%;align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
 .ai-msg.assistant{align-self:flex-start;background:var(--surface-2);color:var(--text);border-bottom-left-radius:4px}
 .ai-msg.assistant.error{background:var(--neg-soft);color:var(--neg)}
+.ai-msg.raw{white-space:pre-wrap}
 .ai-msg p{margin:0 0 8px}
 .ai-msg p:last-child{margin-bottom:0}
 .ai-msg ul,.ai-msg ol{margin:4px 0 8px;padding-left:20px}
@@ -2174,11 +2175,41 @@ function allCategoriesOf(roots){
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
-  if (!state.ai) state.ai = {period: '1y', range: null, contextPeriod: null, context: null, systemPrompt: '', messages: [], loading: false};
+  if (!state.ai) {
+    state.ai = {period: '1y', range: null, contextPeriod: null, context: null, systemPrompt: '', messages: [], loading: false, streamText: null};
+    loadAiConversation();   // 初回だけ、保存済みの会話があれば非同期で読み込んで差し替える
+  }
   app.classList.add('show-main');
   render({nav: true});
 }
 document.getElementById('navAi').onclick = () => openAi();
+// サーバーに保存されている会話（1本だけ）を読み込んで再開する
+async function loadAiConversation(){
+  try {
+    const conv = await api('GET', '/api/ai/conversation');
+    if (conv.messages?.length) {
+      state.ai.messages = conv.messages;
+      if (conv.period) state.ai.period = conv.period;
+      state.ai.contextPeriod = null;   // コンテキストは保存していないので次の送信時に作り直す
+      render();
+    }
+  } catch (e) { /* 読み込みに失敗しても会話機能自体は使えるようにしておく */ }
+}
+// 1往復終わるたびにサーバーへ保存する。サーバー側で古いやり取りが切り詰められた場合はこちらも合わせる
+async function saveAiConversation(st){
+  try {
+    const before = st.messages.length;
+    const conv = await api('PUT', '/api/ai/conversation', {period: st.period, messages: st.messages});
+    st.messages = conv.messages;
+    if (st.messages.length !== before) render();
+  } catch (e) { /* 保存に失敗しても会話自体の続行は妨げない */ }
+}
+async function clearAiConversation(){
+  const st = state.ai;
+  st.messages = []; st.streamText = null;
+  render();
+  try { await api('DELETE', '/api/ai/conversation'); } catch (e) { /* ignore */ }
+}
 // 期間に対応する集計データ・system プロンプトがまだ無い・古い（期間を変更した）場合だけ組み立て直す
 async function ensureAiContext(){
   const st = state.ai;
@@ -2301,10 +2332,54 @@ async function getMonthlyBreakdown(name){
   const totals = months.map((_, i) => guids.reduce((sum, id) => sum + (res.series[id]?.[i] || 0) * sign(id), 0));
   return months.map((m, i) => `${ym(m)}: ${money(totals[i], c)}`).join('\n');
 }
-// AI の呼び出しとツール呼び出し（tool_use）の解決を往復する。往復は最大3回まで
+// サーバーの /api/ai/chat/stream（NDJSON：1行1イベント）を読み進め、テキストが届くたびに
+// onDelta を呼ぶ。最後の done イベントの {content, stopReason} を返す（Anthropic の応答そのまま）
+async function streamAi(payload, onDelta){
+  const res = await fetch('/api/ai/chat/stream', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && data.auth) showAuth();
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, {stream: true});
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
+      if (!line.trim()) continue;
+      const ev = JSON.parse(line);
+      if (ev.type === 'text_delta') onDelta(ev.text);
+      else if (ev.type === 'error') throw new Error(ev.message);
+      else if (ev.type === 'done') return {content: ev.content, stopReason: ev.stopReason};
+    }
+  }
+  throw new Error('AIの応答が途中で終了しました');
+}
+// ストリーミング中の吹き出しを直接 DOM 更新する（1文字ごとに render() で #main を
+// 作り直すと重く・フォーカスも失われるため。吹き出し自体が無ければ render() で作る）
+function updateAiStreamBubbleDom(st){
+  const el = document.getElementById('aiStreamBubble');
+  if (!el) { render({scrollBottom: true}); return; }
+  el.textContent = st.streamText;
+  const sc = document.getElementById('scroll');
+  if (sc) sc.scrollTop = sc.scrollHeight;
+}
+// AI の呼び出しとツール呼び出し（tool_use）の解決を往復する。往復は最大3回まで。
+// 通常の回答テキストはチャットらしく少しずつ表示する（ツール呼び出し往復中の
+// 発言は従来どおり非表示：aiBubble が配列 content を表示しないのと同じ扱い）
 async function callAi(st){
   for (let i = 0; i < 3; i++) {
-    const res = await api('POST', '/api/ai/chat', {messages: st.messages, context: st.systemPrompt, tools: AI_TOOLS});
+    st.streamText = null;
+    const res = await streamAi({messages: st.messages, context: st.systemPrompt, tools: AI_TOOLS}, delta => {
+      st.streamText = (st.streamText || '') + delta;
+      updateAiStreamBubbleDom(st);
+    });
+    st.streamText = null;
     const toolUses = res.content.filter(b => b.type === 'tool_use');
     if (res.stopReason !== 'tool_use' || !toolUses.length) {
       const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
@@ -2312,6 +2387,7 @@ async function callAi(st){
       return;
     }
     st.messages.push({role: 'assistant', content: res.content});
+    render({scrollBottom: true});   // 次のツール呼び出し往復の間はタイピング表示に戻す
     const results = await Promise.all(toolUses.map(async tu => ({
       type: 'tool_result', tool_use_id: tu.id, content: await getMonthlyBreakdown(tu.input?.category),
     })));
@@ -2331,8 +2407,10 @@ async function sendAiText(text){
   } catch (e) {
     st.messages.push({role: 'assistant', content: `すみません、AIの呼び出しに失敗しました（${e.message}）。`, error: true});
   }
+  st.streamText = null;
   st.loading = false;
   render({scrollBottom: true});
+  await saveAiConversation(st);
 }
 async function sendAiMessage(form){
   const input = form.elements.msg;
@@ -2435,13 +2513,14 @@ function renderAi(){
               <button type="button" class="link-btn" data-settings>設定で変更</button></div>
             <button type="button" class="btn primary" id="aiOverview">概況を聞く</button>
           </div>`}
-        ${st.loading ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
+        ${st.streamText != null ? `<div class="ai-msg assistant raw" id="aiStreamBubble">${esc(st.streamText)}</div>` : ''}
+        ${st.loading && st.streamText == null ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
       </div>
       <form class="ai-composer" data-form="ai-chat" autocomplete="off">
         <input name="msg" placeholder="質問を入力（例：貯金を増やすには？）" autocomplete="off" ${st.loading ? 'disabled' : ''}>
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
-      <div class="hint ai-hint">※ AIの回答は参考情報です。重要な判断はご自身でご確認ください。</div>
+      <div class="hint ai-hint">※ AIの回答は参考情報です。重要な判断はご自身でご確認ください。会話は自動的に保存され、直近20往復分のみ保持されます（古いやり取りは自動的に削除されます）。</div>
     </div>`;
 }
 
@@ -3125,7 +3204,7 @@ main.addEventListener('click', e => {
   }
   if (t.closest('#statsAddAcct')) return addStatsAccount();
   if (t.closest('#aiOverview')) return askAiOverview();
-  if (t.closest('#aiClear')) { state.ai.messages = []; render(); return; }
+  if (t.closest('#aiClear')) { clearAiConversation(); return; }
   const aip = t.closest('[data-ai-period]'); if (aip) { state.ai.period = aip.dataset.aiPeriod; render(); return; }
   if (t.closest('[data-settings]')) return openSettings();
   const statsRemove = t.closest('[data-stats-remove]');
