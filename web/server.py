@@ -1160,15 +1160,21 @@ class Handler(BaseHTTPRequestHandler):
         if not sent:
             raise ApiError(400, "messages が必要です")
         model = os.environ.get("GNUCASH_AI_MODEL", "claude-sonnet-5-5")
-        body = {"model": model, "max_tokens": self.AI_MAX_TOKENS, "messages": sent, "stream": True}
+        # 期間の切り替えや日付の経過で system プロンプト（集計データ）の内容は会話の途中でも
+        # 変わりうる（保存済みの会話を別の日に再開した場合も含む）。これは以前のターンの
+        # thinking ブロックの署名を無効にするため、prefix 不一致時はエラーにせず
+        # そのブロックを落として続行するよう明示的に指定する
+        body = {"model": model, "max_tokens": self.AI_MAX_TOKENS, "messages": sent, "stream": True,
+                "thinking": {"type": "adaptive", "block_binding": {"prefix_mismatch_behavior": "drop_block"}}}
         if context:
-            # system プロンプト（集計データ）は会話中は変わらないため、プロンプトキャッシュの
-            # 対象にする。同じ内容を毎回の往復で送り直すことになるこの設計での料金対策
+            # system プロンプトはプロンプトキャッシュの対象にする（同じ内容を毎回の往復で
+            # 送り直すことになるこの設計での料金対策）
             body["system"] = [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}]
         if tools:
             body["tools"] = tools
         req = urllib.request.Request(self.AI_API_URL, data=json.dumps(body).encode(), method="POST", headers={
             "x-api-key": api_key, "anthropic-version": self.AI_API_VERSION,
+            "anthropic-beta": "thinking-binding-controls-2026-08-01",
             "content-type": "application/json"})
         try:
             upstream = urllib.request.urlopen(req, timeout=60)
