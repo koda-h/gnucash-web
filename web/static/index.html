@@ -2150,7 +2150,7 @@ function renderSearch(){
 }
 
 /* ---------- AI分析 ---------- */
-const AI_PERIODS = [['3m', '3ヶ月'], ['6m', '6ヶ月'], ['1y', '1年'], ['all', '全期間']];
+const AI_PERIODS = [['3m', '3ヶ月'], ['6m', '6ヶ月'], ['1y', '1年'], ['2y', '2年'], ['year', '今年'], ['lastYear', '前年'], ['all', '全期間']];
 // 分析対象期間のプリセット → {from, to}（'YYYY-MM-DD'。全期間は十分に古い日付を下限にする）
 function aiRange(period, today){
   const [y, m] = today.split('-').map(Number);
@@ -2158,6 +2158,9 @@ function aiRange(period, today){
   const lastDay = (yy, mm) => new Date(yy, mm, 0).getDate();
   const to = `${y}-${pad2(m)}-${pad2(lastDay(y, m))}`;
   if (period === 'all') return {from: '0001-01-01', to};
+  if (period === 'year') return {from: `${y}-01-01`, to};
+  if (period === 'lastYear') return {from: `${y - 1}-01-01`, to: `${y - 1}-12-31`};
+  if (period === '2y') return {from: `${y - 1}-01-01`, to};
   const back = {'3m': 2, '6m': 5, '1y': 11}[period];
   let fy = y, fm = m - back;
   while (fm <= 0) { fm += 12; fy -= 1; }
@@ -2231,26 +2234,42 @@ async function ensureAiContext(){
   const st = state.ai;
   if (st.context && st.contextPeriod === st.period) return;
   st.range = aiRange(st.period, state.today);
-  st.context = await buildAiContext(st.range.from, st.range.to);
+  st.context = await buildAiContext(st.range.from, st.range.to, st.period);
   st.systemPrompt = buildAiSystemPrompt(st.period, st.range, st.context);
   st.contextPeriod = st.period;
 }
+// 科目（ロールアップ対象。hidden な科目は除く）の、ある balances（期間集計）内での合計
+function rootTotal(id, bal){
+  if (A[id].hidden) return 0;
+  let sum = bal[id] || 0;
+  for (const c of (CHILDREN[id] || [])) sum += rootTotal(c, bal);
+  return sum;
+}
 // 集計済みの数値のみを組み立てる（取引の説明・メモは state.aiIncludeTxDetails がオンの場合のみ別途含める）
-async function buildAiContext(from, to){
+async function buildAiContext(from, to, period){
   const rep = await api('GET', `/api/reports/income-statement?from=${from}&to=${to}`);
   const bal = rep.balances;
   const PERIOD_TOTAL = {};
-  const walk = id => {
-    if (A[id].hidden) return 0;
-    let sum = bal[id] || 0;
-    for (const c of (CHILDREN[id] || [])) sum += walk(c);
-    return PERIOD_TOTAL[id] = sum;
-  };
+  const walk = id => PERIOD_TOTAL[id] = rootTotal(id, bal);
   const incomeRoots = ROOTS.filter(r => A[r].type === 'INCOME' && !A[r].hidden);
   const expenseRoots = ROOTS.filter(r => A[r].type === 'EXPENSE' && !A[r].hidden);
   [...incomeRoots, ...expenseRoots].forEach(walk);
   const incomeTotal = incomeRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
   const expenseTotal = expenseRoots.reduce((x, r) => x + (PERIOD_TOTAL[r] || 0) * sign(r), 0);
+  // 「2年」のときは、今年と前年を比較できるよう年ごとの収益・費用もあわせて取得する
+  let yearly = null;
+  if (period === '2y') {
+    const y2 = Number(to.slice(0, 4)), y1 = y2 - 1;
+    const [repLast, repThis] = await Promise.all([
+      api('GET', `/api/reports/income-statement?from=${y1}-01-01&to=${y1}-12-31`),
+      api('GET', `/api/reports/income-statement?from=${y2}-01-01&to=${to}`),
+    ]);
+    const totalsOf = b => ({
+      incomeTotal: incomeRoots.reduce((x, r) => x + rootTotal(r, b) * sign(r), 0),
+      expenseTotal: expenseRoots.reduce((x, r) => x + rootTotal(r, b) * sign(r), 0),
+    });
+    yearly = [{year: y1, ...totalsOf(repLast.balances)}, {year: y2, ...totalsOf(repThis.balances)}];
+  }
   // 科目別の内訳は、個別の質問（「○○費はいくら？」等）にも答えられるよう全科目（末端科目）を対象にする
   const breakdown = (roots, sign_) => leafCategoriesOf(roots)
     .map(id => ({id, v: (PERIOD_TOTAL[id] || 0) * sign_(id)}))
@@ -2276,7 +2295,7 @@ async function buildAiContext(from, to){
     txDetails = {count: tx.count, topDesc};
   }
   return {incomeTotal, expenseTotal, net: incomeTotal - expenseTotal, topExpenses, expenses, incomes,
-          nw: {assets, liab, total: assets - liab}, txDetails};
+          nw: {assets, liab, total: assets - liab}, txDetails, yearly};
 }
 // Claude に渡す system プロンプト（集計済みの数値のみ。個別の取引明細は含めない）
 function buildAiSystemPrompt(period, range, ctx){
@@ -2289,6 +2308,7 @@ function buildAiSystemPrompt(period, range, ctx){
     `費用合計: ${money(ctx.expenseTotal, c)}`,
     `${ctx.net >= 0 ? '純利益' : '純損失'}: ${money(Math.abs(ctx.net), c)}`,
   ];
+  if (ctx.yearly) lines.push(`年別の内訳（比較用）: ${ctx.yearly.map(y => `${y.year}年 収益合計 ${money(y.incomeTotal, c)}・費用合計 ${money(y.expenseTotal, c)}・${y.incomeTotal - y.expenseTotal >= 0 ? '純利益' : '純損失'} ${money(Math.abs(y.incomeTotal - y.expenseTotal), c)}`).join('、')}`);
   if (ctx.expenses.length) lines.push(`費用の科目別内訳（全科目）: ${ctx.expenses.map(x => `${categoryLabel(x.id)} ${money(x.v, c)}`).join('、')}`);
   if (ctx.incomes.length) lines.push(`収益の科目別内訳（全科目）: ${ctx.incomes.map(x => `${categoryLabel(x.id)} ${money(x.v, c)}`).join('、')}`);
   lines.push(`現在の純資産: ${money(ctx.nw.total, c)}（資産 ${money(ctx.nw.assets, c)}・負債 ${money(ctx.nw.liab, c)}）`);
