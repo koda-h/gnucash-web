@@ -114,6 +114,15 @@ def month_bounds_utc(ym):
     d_from = date(y, m, 1)
     ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
     d_to = date(ny, nm, 1) - timedelta(days=1)
+    return date_range_utc(d_from, d_to)
+
+
+def date_range_utc(d_from, d_to):
+    """ローカル日付の from〜to（両端含む）を、NORM_POST_DATE と比較できる UTC の
+    'YYYYMMDDHHMMSS' 文字列にする。ローカルタイムゾーンへの変換で year が 1〜9999 の
+    範囲を超えないよう、年の両端ぎりぎりの日付（AI分析の「全期間」など）は1日だけ内側に収める"""
+    d_from = max(d_from, date(1, 1, 2))
+    d_to = min(d_to, date(9999, 12, 30))
     start = datetime.combine(d_from, dtime.min).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
     end = datetime.combine(d_to, dtime.max).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
     return start, end
@@ -352,8 +361,7 @@ class Book:
             d_from, d_to = date.fromisoformat(frm), date.fromisoformat(to)
         except ValueError:
             raise ApiError(400, "期間が正しくありません")
-        start = datetime.combine(d_from, dtime.min).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
-        end = datetime.combine(d_to, dtime.max).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        start, end = date_range_utc(d_from, d_to)
         with self.connect() as con:
             rows = con.execute(f"""
                 select s.account_guid, s.quantity_num, s.quantity_denom, c.fraction
@@ -436,8 +444,7 @@ class Book:
         except ValueError:
             raise ApiError(400, "期間が正しくありません")
         limit = max(1, min(int(limit), 1000))
-        start = datetime.combine(d_from, dtime.min).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
-        end = datetime.combine(d_to, dtime.max).astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+        start, end = date_range_utc(d_from, d_to)
         with self.connect() as con:
             tx_rows = con.execute(f"""
                 select t.guid, t.description, t.post_date
