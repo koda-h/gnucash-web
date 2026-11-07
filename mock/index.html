@@ -566,8 +566,16 @@ form.busy{opacity:.6;pointer-events:none}
 .settings-row + .settings-row{border-top:1px solid var(--border)}
 .settings-row .lbl{font-size:13.5px;color:var(--text)}
 .settings-row .sub{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
+.settings-row select{height:32px;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface);padding:0 8px;outline:none;color:inherit;font:inherit;flex:none}
 
 </style>
+<script>
+// 画面の点滅（一瞬だけ違う配色が出る）を防ぐため、本体スクリプトの読み込み前に適用する
+try {
+  var _theme = localStorage.getItem('theme');
+  if (_theme === 'light' || _theme === 'dark') document.documentElement.setAttribute('data-theme', _theme);
+} catch (e) {}
+</script>
 </head>
 <body>
 <div class="auth-screen" id="authScreen" hidden></div>
@@ -701,11 +709,19 @@ const state = {
   ai: null,     // AI分析画面の状態 {status, period, range, messages, loading, context}。null = まだ開いていない
   showMonthHeaders: true, // 登録簿の月の区切り（見出し＋月合計）を表示するか。設定は localStorage に保存
   aiIncludeTxDetails: false, // AI分析：取引の説明・メモも送信するか（既定オフ）。設定は localStorage に保存
+  theme: 'system', // 配色（light/dark/system）。設定は localStorage に保存
 };
 try { state.showMonthHeaders = localStorage.getItem('showMonthHeaders') !== '0'; } catch (e) {}
 function setShowMonthHeaders(v){
   state.showMonthHeaders = v;
   try { localStorage.setItem('showMonthHeaders', v ? '1' : '0'); } catch (e) {}
+}
+try { state.theme = localStorage.getItem('theme') || 'system'; } catch (e) {}
+function setTheme(v){
+  state.theme = v;
+  try { localStorage.setItem('theme', v); } catch (e) {}
+  if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v);
+  else document.documentElement.removeAttribute('data-theme');
 }
 try { state.aiIncludeTxDetails = localStorage.getItem('aiIncludeTxDetails') === '1'; } catch (e) {}
 function setAiIncludeTxDetails(v){
@@ -3659,8 +3675,19 @@ function openSettings(){
 }
 function settingsBody(){
   const on = state.aiIncludeTxDetails;
+  const theme = state.theme;
   return `
     <div class="keys-h"><h2>設定</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
+    <div class="settings-section-h">表示</div>
+    <div class="settings-row">
+      <div><div class="lbl">配色</div>
+        <div class="sub">画面の配色を選択します。</div></div>
+      <select id="themeSelect" aria-label="配色">
+        <option value="system" ${theme === 'system' ? 'selected' : ''}>システム設定を使用</option>
+        <option value="light" ${theme === 'light' ? 'selected' : ''}>ライト</option>
+        <option value="dark" ${theme === 'dark' ? 'selected' : ''}>ダーク</option>
+      </select>
+    </div>
     <div class="settings-section-h">AI分析</div>
     <div class="settings-row">
       <div><div class="lbl">取引の説明・メモを考慮する</div>
@@ -3673,6 +3700,7 @@ document.getElementById('settingsDialog').addEventListener('click', e => {
   if (e.target.closest('[data-close]') || e.target === d) d.close();
 });
 document.getElementById('settingsDialog').addEventListener('change', e => {
+  if (e.target.id === 'themeSelect') return setTheme(e.target.value);
   if (e.target.id !== 'aiIncludeTxDetailsToggle') return;
   setAiIncludeTxDetails(e.target.checked);
   if (state.view === 'ai') render();   // AI分析画面が開いていれば注記・コンテキストを更新
