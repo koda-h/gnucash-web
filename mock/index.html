@@ -2358,6 +2358,8 @@ function aiPeriodLabel(period, range){
   const ym = iso => { const [y, m] = iso.split('-'); return `${y}年${+m}月`; };
   return period === 'all' ? `全期間（${ym(range.to)}まで）` : `${ym(range.from)} 〜 ${ym(range.to)}`;
 }
+// 取引の説明・メモを取得する件数の上限（期間が長いほど、直近偏重にならないよう増やす）
+const aiTxLimit = period => ({'2y': 400, all: 800})[period] || 200;
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
@@ -2457,9 +2459,9 @@ async function buildAiContext(from, to, period){
   const incomes = breakdown(incomeRoots, sign);
   const topExpenses = expenses.slice(0, 3);
   let txDetails = null;
-  // 設定でオンの場合のみ、取引の説明・メモ（最大200件、金額・科目は含めない）も取得する
+  // 設定でオンの場合のみ、取引の説明・メモ（金額・科目は含めない）も取得する
   if (state.aiIncludeTxDetails) {
-    const tx = await api('GET', `/api/reports/transactions?from=${from}&to=${to}&limit=200`);
+    const tx = await api('GET', `/api/reports/transactions?from=${from}&to=${to}&limit=${aiTxLimit(period)}`);
     const freq = {};
     for (const r of tx.rows) if (r.desc) freq[r.desc] = (freq[r.desc] || 0) + 1;
     const topDesc = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d]) => d);
@@ -2595,7 +2597,7 @@ function renderAi(){
 
   const detailOn = state.aiIncludeTxDetails;
   const detailNote = detailOn
-    ? '取引の説明・メモ（最大200件）も含めて送信します。個人情報が含まれる場合があるのでご注意ください。'
+    ? `取引の説明・メモ（最大${aiTxLimit(st.period)}件）も含めて送信します。個人情報が含まれる場合があるのでご注意ください。`
     : '個別の取引の説明・メモは送信されません。';
 
   main.innerHTML = header + `
@@ -3711,7 +3713,7 @@ function settingsBody(){
     <div class="settings-section-h">AI分析</div>
     <div class="settings-row">
       <div><div class="lbl">取引の説明・メモを考慮する</div>
-        <div class="sub">オンにすると、分析対象期間の取引の説明・メモ（最大200件）もAIに送信します。店名や個人名などが含まれる場合があるのでご注意ください。</div></div>
+        <div class="sub">オンにすると、分析対象期間の取引の説明・メモ（期間に応じて最大200〜800件）もAIに送信します。店名や個人名などが含まれる場合があるのでご注意ください。</div></div>
       <label class="switch"><input type="checkbox" id="aiIncludeTxDetailsToggle" ${on ? 'checked' : ''} aria-label="取引の説明・メモを考慮する"><span class="slider"></span></label>
     </div>`;
 }
