@@ -1609,6 +1609,20 @@ function renderSidebar(){
   }).join('') || '<div class="empty">該当する勘定科目がありません</div>';
 }
 
+// 勘定科目の取引一覧：期間フィルター（チップ）の定義。一覧の絞り込みと、上部の
+// 「○○の入金／出金」集計の両方で同じ期間を使うため、from/to・ラベルをここで共有する
+const REG_PERIODS = [['all', 'すべて'], ['month', '今月'], ['q3', '3か月'], ['year', '今年']];
+function regPeriodRange(period){
+  if (period === 'report') return {from: state.periodRange?.from || '', to: state.periodRange?.to || ''};
+  const from = {all: '', month: state.today.slice(0, 7) + '-01', q3: shiftMonth(state.today, -3),
+                year: state.today.slice(0, 4) + '-01-01'}[period] ?? '';
+  return {from, to: ''};
+}
+function regPeriodLabel(period){
+  if (period === 'report') return state.periodRangeLabel || '指定期間';
+  return REG_PERIODS.find(([k]) => k === period)?.[1] || 'すべて';
+}
+
 /* ---------- メイン ---------- */
 function renderMain(){
   if (state.view === 'recent') return renderRecent();
@@ -1656,14 +1670,15 @@ function renderMain(){
 
   const [colL, colR] = T(a.type).cols;
   const all = state.reg.rows;
-  const month = state.today.slice(0, 7);
-  const mL = all.filter(r => r.date.startsWith(month) && r.amt > 0).reduce((x, r) => x + r.amt, 0);
-  const mR = all.filter(r => r.date.startsWith(month) && r.amt < 0).reduce((x, r) => x - r.amt, 0);
+  const {from: statFrom, to: statTo} = regPeriodRange(state.period);
+  const inStatPeriod = r => (!statFrom || r.date >= statFrom) && (!statTo || r.date <= statTo);
+  const mL = all.filter(r => inStatPeriod(r) && r.amt > 0).reduce((x, r) => x + r.amt, 0);
+  const mR = all.filter(r => inStatPeriod(r) && r.amt < 0).reduce((x, r) => x - r.amt, 0);
 
   main.innerHTML = header + `
     <div class="toolbar">
       <div class="chips" role="tablist">
-        ${[['all','すべて'],['month','今月'],['q3','3か月'],['year','今年'], ...(state.periodRange ? [['report', state.periodRangeLabel || '指定期間']] : [])].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
+        ${[...REG_PERIODS, ...(state.periodRange ? [['report', regPeriodLabel('report')]] : [])].map(([k,l]) => `<button class="chip ${state.period===k?'on':''}" data-period="${k}">${l}</button>`).join('')}
       </div>
       <label class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -1689,8 +1704,8 @@ function renderMain(){
   // 子科目がある場合、登録簿はこの科目自身の取引のみ（GnuCash と同じ）なので残高を分けて表示
   const own = a.balance * sign(id);
   document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="lbl">今月の${colL}</div><div class="val num">${money(mL, id)}</div></div>
-    <div class="stat"><div class="lbl">今月の${colR}</div><div class="val num">${money(mR, id)}</div></div>
+    <div class="stat"><div class="lbl">${regPeriodLabel(state.period)}の${colL}</div><div class="val num">${money(mL, id)}</div></div>
+    <div class="stat"><div class="lbl">${regPeriodLabel(state.period)}の${colR}</div><div class="val num">${money(mR, id)}</div></div>
     ${CHILDREN[id] ? `<div class="stat"><div class="lbl">子科目を含む合計</div><div class="val num ${v<0?'neg':''}">${money(v, id)}</div></div>` : ''}
     <div class="stat big"><div class="lbl">${CHILDREN[id] ? 'この科目の残高' : '残高'}</div><div class="val num ${own<0?'neg':''}">${money(own, id)}</div></div>`;
 }
@@ -1700,9 +1715,7 @@ function registerBody(id){
   const a = A[id];
   const [colL, colR] = T(a.type).cols;
   const all = state.reg.rows;
-  const from = {all:'', month: state.today.slice(0, 7) + '-01', q3: shiftMonth(state.today, -3), year: state.today.slice(0,4) + '-01-01',
-    report: state.periodRange?.from || ''}[state.period];
-  const to = state.period === 'report' ? (state.periodRange?.to || '') : '';
+  const {from, to} = regPeriodRange(state.period);
   const q = state.q.trim().toLowerCase();
   let rows = all.filter(r => (!from || r.date >= from) && (!to || r.date <= to) &&
     (!q || r.desc.toLowerCase().includes(q) || (r.num || '').toLowerCase().includes(q) || (r.other && fullName(r.other).toLowerCase().includes(q))));
