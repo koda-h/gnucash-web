@@ -1015,7 +1015,7 @@ function renderSidebar(){
 
 // 勘定科目の取引一覧：期間フィルター（チップ）の定義。一覧の絞り込みと、上部の
 // 「○○の入金／出金」集計の両方で同じ期間を使うため、from/to・ラベルをここで共有する
-const REG_PERIODS = [['all', 'すべて'], ['month', '今月'], ['q3', '3か月'], ['year', '今年']];
+const REG_PERIODS = [['all', 'すべて'], ['month', '今月'], ['q3', '3ヶ月'], ['year', '今年']];
 function regPeriodRange(period){
   if (period === 'report') return {from: state.periodRange?.from || '', to: state.periodRange?.to || ''};
   const from = {all: '', month: state.today.slice(0, 7) + '-01', q3: shiftMonth(state.today, -3),
