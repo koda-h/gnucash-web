@@ -571,6 +571,11 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-composer input{flex:1;height:36px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);padding:0 11px;outline:none;min-width:0}
 .ai-composer input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .ai-hint{padding:0 20px 14px;display:block}
+.ai-tab-bar{padding:0 20px 14px}
+.ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
+.ai-pending .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
+.ai-pending .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.ai-pending-bar{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 .link-btn{border:0;background:none;color:var(--accent);padding:0;cursor:pointer;font:inherit;font-weight:500;text-decoration:underline}
 .switch{position:relative;display:inline-block;width:40px;height:22px;flex:none}
 .switch input{position:absolute;opacity:0;width:1px;height:1px}
@@ -622,7 +627,7 @@ try {
       <button type="button" class="nav-icon" id="navSearch" data-tip="取引検索" aria-label="取引検索">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       </button>
-      <button type="button" class="nav-icon" id="navAi" data-tip="AI分析" aria-label="AI分析">
+      <button type="button" class="nav-icon" id="navAi" data-tip="AIアシスタント" aria-label="AIアシスタント">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/></svg>
       </button>
     </div>
@@ -1503,14 +1508,16 @@ function render({scrollBottom = false, anchor = null, nav = false} = {}){
   // 勘定科目を選んでいればその guid、それ以外は /）。科目の切り替えだけ履歴に積み、
   // 同じ画面内の描き直し（検索絞り込み・編集中など）は積まない
   const path = state.view === 'recent' ? '/recent' : state.view === 'report' ? '/report' : state.view === 'import' ? '/import'
-    : state.view === 'stats' ? '/stats' : state.view === 'search' ? '/search' : state.view === 'ai' ? '/ai'
+    : state.view === 'stats' ? '/stats' : state.view === 'search' ? '/search'
+    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '/ai/ledger' : '/ai/analysis')
     : state.selected ? '/' + state.selected : '/';
   if (!skipHistoryWrite && location.pathname !== path) {
     try { history[nav ? 'pushState' : 'replaceState'](null, '', path + location.search); } catch {}
   }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
-  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.view === 'search' ? '__search' : state.view === 'ai' ? '__ai' : state.selected;
+  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.view === 'search' ? '__search'
+    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '__ailedger' : '__ai') : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   closeSuggest();   // #main を作り直すと候補ドロップダウンを出していた入力欄ごと消えるため閉じておく
@@ -2182,7 +2189,7 @@ function renderSearch(){
     </div>`;
 }
 
-/* ---------- AI分析 ---------- */
+/* ---------- AIアシスタント：分析タブ ---------- */
 const AI_PERIODS = [['3m', '3ヶ月'], ['6m', '6ヶ月'], ['1y', '1年'], ['2y', '2年'], ['year', '今年'], ['lastYear', '前年'], ['all', '全期間']];
 // 分析対象期間のプリセット → {from, to}（'YYYY-MM-DD'。全期間は十分に古い日付を下限にする）
 function aiRange(period, today){
@@ -2226,12 +2233,18 @@ function allCategoriesOf(roots){
   roots.forEach(r => (CHILDREN[r] || []).forEach(walk));
   return out;
 }
+const AI_TABS = [['analysis', '分析'], ['ledger', '記帳']];
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
+  if (!state.aiTab) state.aiTab = 'analysis';
   if (!state.ai) {
     state.ai = {period: '1y', range: null, contextPeriod: null, context: null, systemPrompt: '', messages: [], loading: false, streamText: null};
     loadAiConversation();   // 初回だけ、保存済みの会話があれば非同期で読み込んで差し替える
+  }
+  if (!state.aiLedger) {
+    state.aiLedger = {messages: [], loading: false, streamText: null, pending: null};
+    loadAiLedgerConversation();
   }
   app.classList.add('show-main');
   render({nav: true});
@@ -2263,6 +2276,30 @@ async function clearAiConversation(){
   st.messages = []; st.streamText = null;
   render();
   try { await api('DELETE', '/api/ai/conversation'); } catch (e) { /* ignore */ }
+}
+// 記帳タブの会話（分析タブとは別ファイルに保存。ツールの使い分けを会話ごとに明確にするため）
+async function loadAiLedgerConversation(){
+  try {
+    const conv = await api('GET', '/api/ai/ledger-conversation');
+    if (conv.messages?.length) {
+      state.aiLedger.messages = conv.messages;
+      render();
+    }
+  } catch (e) { /* 読み込みに失敗しても会話機能自体は使えるようにしておく */ }
+}
+async function saveAiLedgerConversation(st){
+  try {
+    const before = st.messages.length;
+    const conv = await api('PUT', '/api/ai/ledger-conversation', {messages: st.messages});
+    st.messages = conv.messages;
+    if (st.messages.length !== before) render();
+  } catch (e) { /* 保存に失敗しても会話自体の続行は妨げない */ }
+}
+async function clearAiLedgerConversation(){
+  const st = state.aiLedger;
+  st.messages = []; st.streamText = null; st.pending = null;
+  render();
+  try { await api('DELETE', '/api/ai/ledger-conversation'); } catch (e) { /* ignore */ }
 }
 // 期間に対応する集計データ・system プロンプトがまだ無い・古い（期間を変更した）場合だけ組み立て直す
 async function ensureAiContext(){
@@ -2443,10 +2480,12 @@ function updateAiStreamBubbleDom(st){
 // AI の呼び出しとツール呼び出し（tool_use）の解決を往復する。往復は最大3回まで。
 // 通常の回答テキストはチャットらしく少しずつ表示する（ツール呼び出し往復中の
 // 発言は従来どおり非表示：aiBubble が配列 content を表示しないのと同じ扱い）
-async function callAi(st){
+// tools・execTool を引数化：分析タブ（AI_TOOLS/getMonthlyBreakdown）と記帳タブ
+// （LEDGER_TOOLS/execLedgerTool）で、別々のツール定義・実行関数を使い回す
+async function callAi(st, tools, execTool){
   for (let i = 0; i < 3; i++) {
     st.streamText = null;
-    const res = await streamAi({messages: st.messages, context: st.systemPrompt, tools: AI_TOOLS}, delta => {
+    const res = await streamAi({messages: st.messages, context: st.systemPrompt || '', tools}, delta => {
       st.streamText = (st.streamText || '') + delta;
       updateAiStreamBubbleDom(st);
     });
@@ -2460,7 +2499,7 @@ async function callAi(st){
     st.messages.push({role: 'assistant', content: res.content});
     render({scrollBottom: true});   // 次のツール呼び出し往復の間はタイピング表示に戻す
     const results = await Promise.all(toolUses.map(async tu => ({
-      type: 'tool_result', tool_use_id: tu.id, content: await getMonthlyBreakdown(tu.input?.category),
+      type: 'tool_result', tool_use_id: tu.id, content: await execTool(tu),
     })));
     st.messages.push({role: 'user', content: results});
   }
@@ -2474,7 +2513,7 @@ async function sendAiText(text){
   render({scrollBottom: true});
   try {
     await ensureAiContext();
-    await callAi(st);
+    await callAi(st, AI_TOOLS, tu => getMonthlyBreakdown(tu.input?.category));
   } catch (e) {
     st.messages.push({role: 'assistant', content: `すみません、AIの呼び出しに失敗しました（${e.message}）。`, error: true});
   }
@@ -2489,6 +2528,126 @@ async function sendAiMessage(form){
   if (!text) return;
   input.value = '';
   await sendAiText(text);
+}
+
+/* ---------- AIアシスタント：記帳タブ ---------- */
+const AI_LEDGER_SYSTEM_PROMPT = [
+  'あなたは家計管理アプリ「GnuCash Web」に組み込まれた記帳アシスタントです。',
+  'ユーザーの指示（例：「食費 500円」「給与 300000円 普通預金」）をもとに add_transaction ツールを呼び出して取引を記録してください。',
+  '科目名が曖昧な場合はツールの結果に候補が示されるので、ユーザーに確認してから confirmed_category／confirmed_payment_account を指定して再度呼び出してください。',
+  '金額・支払い元（入金先）が分からない場合は、ツールを呼ばずにユーザーに質問してください。',
+  '重要：add_transaction を呼んでも、その場で実際に記帳されるわけではありません。ユーザーが画面の確認ボタンを押すまでは記録されないので、ツールの結果を踏まえて「この内容でよろしいですか？」のように確認を促す返答をしてください。',
+].join('\n');
+const LEDGER_TOOLS = [{
+  name: 'add_transaction',
+  description: '取引の記録を準備します（例: 「食費 500円」）。この時点ではまだ記帳されず、ユーザーが画面で確認・確定する必要があります。',
+  input_schema: {
+    type: 'object',
+    properties: {
+      amount: {type: 'number', description: '金額。支出・収入のどちらでも正の数で指定する'},
+      category: {type: 'string', description: '勘定科目のヒント（例: 食費、交際費、給与）。費用科目なら支出、収益科目なら収入として記録される'},
+      payment_account: {type: 'string', description: '支払い元・入金先のヒント（例: 現金、普通預金）'},
+      description: {type: 'string', description: '取引の説明・メモ（省略可）'},
+      date: {type: 'string', description: '日付（YYYY-MM-DD）。省略時は今日'},
+      confirmed_category: {type: 'string', description: 'category が曖昧だった場合に、ユーザーが選んだ正式な科目名（候補のnameをそのまま）。指定すると category の表記を次回のために記憶する'},
+      confirmed_payment_account: {type: 'string', description: 'confirmed_category と同様。payment_account 用'},
+    },
+    required: ['amount', 'category'],
+  },
+}];
+// 科目名のヒントをサーバーの /api/mcp/resolve-account で解決する。確認済み（confirmed）が
+// 渡された場合は、それも解決したうえで元のヒント文字列との対応を /api/mcp/mappings に記憶させる
+// （MCPサーバー側の add_transaction と全く同じ解決・学習の仕組みを使い回す）
+async function resolveLedgerField(hint, confirmed, label){
+  const text = (confirmed || hint || '').trim();
+  if (!text) return {error: `${label}が指定されていません。`};
+  const r = await api('GET', `/api/mcp/resolve-account?q=${encodeURIComponent(text)}`);
+  if (r.status !== 'resolved') {
+    const cand = r.status === 'none' ? '該当する勘定科目が見つかりませんでした。正式な科目名を教えてください。'
+      : `候補が複数あり特定できません。どれか教えてください。\n${r.candidates.map(c => `- ${c.name}`).join('\n')}`;
+    return {error: `${label}「${text}」: ${cand}`};
+  }
+  if (confirmed && hint && confirmed.trim() !== hint.trim()) {
+    try { await api('POST', '/api/mcp/mappings', {query: hint.trim(), account: r.guid}); } catch (e) { /* 学習に失敗しても解決自体は成功扱い */ }
+  }
+  return {resolved: r};
+}
+async function execLedgerTool(tu){
+  const st = state.aiLedger;
+  const a = tu.input || {};
+  const amount = Number(a.amount);
+  if (!isFinite(amount) || amount === 0) return 'amount には 0 以外の数値を指定してください。';
+  const [catRes, payRes] = await Promise.all([
+    resolveLedgerField(a.category, a.confirmed_category, 'category'),
+    resolveLedgerField(a.payment_account, a.confirmed_payment_account, 'payment_account'),
+  ]);
+  if (catRes.error || payRes.error) {
+    return [catRes.error, payRes.error].filter(Boolean).join('\n')
+      + '\n\n確認できたら、add_transaction を confirmed_category（および必要なら confirmed_payment_account）を指定して同じ内容でもう一度呼び出してください。';
+  }
+  const date = String(a.date || '').trim() || new Date().toISOString().slice(0, 10);
+  st.pending = {category: catRes.resolved, payment: payRes.resolved, amount: Math.abs(amount),
+                date, desc: String(a.description || '').trim()};
+  return '内容を確認用に準備しました。ユーザーが画面の確認ボタンで記録を確定するまで、まだ記帳されていません。内容をユーザーに伝えて、確認を促してください。';
+}
+function aiPendingCard(p){
+  if (!p) return '';
+  const c = bookCommodity();
+  return `
+    <div class="ai-pending">
+      <div class="lbl">この内容で記録しますか？</div>
+      <div>${esc(p.date)}　${esc(p.category.name)}　${money(p.amount, c)}</div>
+      <div class="sub">${esc(p.payment.name)} から支払い${p.desc ? '　説明: ' + esc(p.desc) : ''}</div>
+      <div class="ai-pending-bar">
+        <button type="button" class="btn ghost" id="aiPendingCancel">キャンセル</button>
+        <button type="button" class="btn primary" id="aiPendingConfirm">記録する</button>
+      </div>
+    </div>`;
+}
+async function sendAiLedgerText(text){
+  const st = state.aiLedger;
+  if (!text || st.loading) return;
+  st.messages.push({role: 'user', content: text});
+  st.loading = true;
+  st.pending = null;
+  render({scrollBottom: true});
+  try {
+    st.systemPrompt = AI_LEDGER_SYSTEM_PROMPT;
+    await callAi(st, LEDGER_TOOLS, execLedgerTool);
+  } catch (e) {
+    st.messages.push({role: 'assistant', content: `すみません、AIの呼び出しに失敗しました（${e.message}）。`, error: true});
+  }
+  st.streamText = null;
+  st.loading = false;
+  render({scrollBottom: true});
+  await saveAiLedgerConversation(st);
+}
+async function sendAiLedgerMessage(form){
+  const input = form.elements.msg;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  await sendAiLedgerText(text);
+}
+async function confirmAiPending(){
+  const st = state.aiLedger, p = st.pending;
+  if (!p) return;
+  st.pending = null;
+  try {
+    await api('POST', '/api/transactions', {
+      account: p.category.guid, other: p.payment.guid, date: p.date, desc: p.desc,
+      amount: String(p.category.credit ? -p.amount : p.amount),
+    });
+    st.messages.push({role: 'assistant', content: `✅ 記録しました：${p.date}　${p.category.name}　${money(p.amount, bookCommodity())}（${p.payment.name}）`});
+  } catch (e) {
+    st.messages.push({role: 'assistant', content: `記録に失敗しました（${e.message}）。`, error: true});
+  }
+  render({scrollBottom: true});
+  await saveAiLedgerConversation(st);
+}
+function cancelAiPending(){
+  state.aiLedger.pending = null;
+  render();
 }
 // ごく簡単な Markdown → HTML（AIの回答表示用。太字・斜体・箇条書き・段落のみに対応）
 function renderMarkdown(text){
@@ -2547,28 +2706,32 @@ function aiBubble(m){
 }
 function renderAi(){
   const main = document.getElementById('main');
-  const st = state.ai;
   const header = `
     <div class="header"><div>
       <button class="back" data-back>‹ 勘定科目一覧</button>
-      <h1 class="title">AI分析</h1>
-      <div class="desc">集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します</div>
-    </div></div>`;
+      <h1 class="title">AIアシスタント</h1>
+      <div class="desc">${state.aiTab === 'ledger' ? 'チャットでの指示をもとに、取引をGnuCash Webに記録します' : '集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します'}</div>
+    </div></div>
+    <div class="ai-tab-bar">
+      <div class="chips" role="tablist">${AI_TABS.map(([k,l]) => `<button class="chip ${state.aiTab===k?'on':''}" data-ai-tab="${k}">${l}</button>`).join('')}</div>
+    </div>`;
 
   if (state.aiAvailable === false) {
     main.innerHTML = header + `
       <div class="card"><div class="ai-empty">
-        <div class="ai-note">サーバーに <code>GNUCASH_AI_API_KEY</code> が設定されていないため、AI分析を利用できません。サーバーの起動時に環境変数を設定してください。</div>
+        <div class="ai-note">サーバーに <code>GNUCASH_AI_API_KEY</code> が設定されていないため、AIアシスタントを利用できません。サーバーの起動時に環境変数を設定してください。</div>
       </div></div>`;
     return;
   }
-
+  main.innerHTML = header + (state.aiTab === 'ledger' ? renderAiLedgerBody() : renderAiAnalysisBody());
+}
+function renderAiAnalysisBody(){
+  const st = state.ai;
   const detailOn = state.aiIncludeTxDetails;
   const detailNote = detailOn
     ? `取引の説明・メモ（最大${aiTxLimit(st.period)}件）も含めて送信します。個人情報が含まれる場合があるのでご注意ください。`
     : '個別の取引の説明・メモは送信されません。';
-
-  main.innerHTML = header + `
+  return `
     <div class="card ai-card">
       <div class="ai-period-bar">
         <div class="chips" role="tablist">${AI_PERIODS.map(([k,l]) => `<button class="chip ${st.period===k?'on':''}" data-ai-period="${k}">${l}</button>`).join('')}</div>
@@ -2592,6 +2755,32 @@ function renderAi(){
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
       <div class="hint ai-hint">※ AIの回答は参考情報です。重要な判断はご自身でご確認ください。会話は自動的に保存され、直近20往復分のみ保持されます（古いやり取りは自動的に削除されます）。</div>
+    </div>`;
+}
+function renderAiLedgerBody(){
+  const st = state.aiLedger;
+  const writable = canWrite();
+  return `
+    <div class="card ai-card">
+      <div class="ai-period-bar">
+        <div class="ai-note" style="margin:0">「食費 500円」のように話しかけると、科目を確認のうえ取引を記録します。</div>
+        ${st.messages.length ? '<button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>' : ''}
+      </div>
+      <div class="scroll ai-scroll" id="scroll" data-account="__ailedger">
+        ${!writable ? `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため記帳できません' : 'GnuCash デスクトップのロック中のため記帳できません'}</div>` : ''}
+        ${st.messages.length ? st.messages.map(aiBubble).join('') : `
+          <div class="ai-empty">
+            <div class="ai-note">例：「食費 500円」「給与 300000円 普通預金」のように話しかけてください。科目が曖昧な場合は確認します。実際の記録前に必ず確認画面が表示されます。</div>
+          </div>`}
+        ${st.streamText != null ? `<div class="ai-msg assistant raw" id="aiStreamBubble">${esc(st.streamText)}</div>` : ''}
+        ${st.loading && st.streamText == null ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
+        ${aiPendingCard(st.pending)}
+      </div>
+      <form class="ai-composer" data-form="ai-ledger-chat" autocomplete="off">
+        <input name="msg" placeholder="例：食費 500円" autocomplete="off" ${st.loading || !writable ? 'disabled' : ''}>
+        <button type="submit" class="btn primary" ${st.loading || !writable ? 'disabled' : ''}>送信</button>
+      </form>
+      <div class="hint ai-hint">※ 実際の記録はこの画面で確認してから行われます。会話は自動的に保存され、直近20往復分のみ保持されます。</div>
     </div>`;
 }
 
@@ -3276,6 +3465,10 @@ main.addEventListener('click', e => {
   if (t.closest('#statsAddAcct')) return addStatsAccount();
   if (t.closest('#aiOverview')) return askAiOverview();
   if (t.closest('#aiClear')) { clearAiConversation(); return; }
+  if (t.closest('#aiLedgerClear')) { clearAiLedgerConversation(); return; }
+  if (t.closest('#aiPendingConfirm')) return confirmAiPending();
+  if (t.closest('#aiPendingCancel')) { cancelAiPending(); return; }
+  const aiTab = t.closest('[data-ai-tab]'); if (aiTab) { state.aiTab = aiTab.dataset.aiTab; render(); return; }
   const aip = t.closest('[data-ai-period]'); if (aip) { state.ai.period = aip.dataset.aiPeriod; render(); return; }
   if (t.closest('[data-settings]')) return openSettings();
   const statsRemove = t.closest('[data-stats-remove]');
@@ -3371,6 +3564,7 @@ main.addEventListener('keydown', e => {
 main.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.dataset.form === 'ai-chat') return sendAiMessage(e.target);
+  if (e.target.dataset.form === 'ai-ledger-chat') return sendAiLedgerMessage(e.target);
   e.target.dataset.mode === 'recent' ? saveRecent(e.target) : save(e.target);
 });
 main.addEventListener('reset', e => setTimeout(() => {
@@ -3630,7 +3824,7 @@ function settingsBody(){
         <option value="dark" ${theme === 'dark' ? 'selected' : ''}>ダーク</option>
       </select>
     </div>
-    <div class="settings-section-h">AI分析</div>
+    <div class="settings-section-h">AIアシスタント（分析）</div>
     <div class="settings-row">
       <div><div class="lbl">取引の説明・メモを考慮する</div>
         <div class="sub">オンにすると、分析対象期間の取引の説明・メモ（期間に応じて最大200〜800件）もAIに送信します。店名や個人名などが含まれる場合があるのでご注意ください。</div></div>
@@ -3725,7 +3919,10 @@ async function boot(){
   if (location.pathname === '/import') return openImport();
   if (location.pathname === '/stats') return openStats();
   if (location.pathname === '/search') return openSearch();
-  if (location.pathname === '/ai') return openAi();
+  if (location.pathname === '/ai' || location.pathname === '/ai/analysis' || location.pathname === '/ai/ledger') {
+    state.aiTab = location.pathname === '/ai/ledger' ? 'ledger' : 'analysis';
+    return openAi();
+  }
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // /<勘定科目の guid> で開いた・リロードした場合は、画面幅に関わらずその科目を直接開く
   const directId = location.pathname.slice(1);
@@ -3750,7 +3947,10 @@ async function syncViewFromLocation(){
     if (p === '/import') return openImport();
     if (p === '/stats') return openStats();
     if (p === '/search') return openSearch();
-    if (p === '/ai') return openAi();
+    if (p === '/ai' || p === '/ai/analysis' || p === '/ai/ledger') {
+      state.aiTab = p === '/ai/ledger' ? 'ledger' : 'analysis';
+      return openAi();
+    }
     const id = p.slice(1);
     if (id && A[id]) return await select(id);
     // ルート、またはもう存在しない科目の guid なら「未選択」に戻す

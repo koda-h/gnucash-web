@@ -1048,18 +1048,24 @@ class Book:
             self._save_settings(d)
             return d
 
-    # ---- AI分析：会話履歴の永続化
-    # 同じフォルダの ai-conversation.json に、会話を1本だけ保存する（複数保存はしない）。
+    # ---- AIアシスタント：会話履歴の永続化
+    # 同じフォルダに、タブ（kind）ごとに会話を1本だけ保存する（複数保存はしない）。
+    # 分析タブは ai-conversation.json、記帳タブは ai-ledger-conversation.json に分ける。
+    # ツールの使い分け（記帳タブだけが取引を作れる）を会話ごとに明確にするため、あえて混ぜない。
     # 毎回のやり取りで会話全体をAnthropicに送り直す設計のため、無期限に保存すると1回あたりの
     # 料金・応答時間が伸び続けてしまう。そのため保存のたびに直近 AI_MAX_EXCHANGES 往復だけ残す
 
     AI_MAX_EXCHANGES = 20
+    CONVERSATION_FILES = {"analysis": "ai-conversation.json", "ledger": "ai-ledger-conversation.json"}
 
-    def _conversation_path(self):
-        return Path(self.path).parent / "ai-conversation.json"
+    def _conversation_path(self, kind="analysis"):
+        name = self.CONVERSATION_FILES.get(kind)
+        if not name:
+            raise ApiError(400, "kind が正しくありません")
+        return Path(self.path).parent / name
 
-    def _load_conversation(self):
-        p = self._conversation_path()
+    def _load_conversation(self, kind="analysis"):
+        p = self._conversation_path(kind)
         if not p.exists():
             return {"period": None, "messages": [], "updatedAt": None}
         try:
@@ -1071,8 +1077,8 @@ class Book:
             messages = []
         return {"period": data.get("period"), "messages": messages, "updatedAt": data.get("updatedAt")}
 
-    def _save_conversation_file(self, data):
-        p = self._conversation_path()
+    def _save_conversation_file(self, data, kind="analysis"):
+        p = self._conversation_path(kind)
         p.parent.mkdir(parents=True, exist_ok=True)
         tmp = p.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1091,23 +1097,23 @@ class Book:
         kept = groups[-Book.AI_MAX_EXCHANGES:]
         return [m for g in kept for m in g]
 
-    def get_conversation(self):
+    def get_conversation(self, kind="analysis"):
         with self._conversation_lock:
-            return self._load_conversation()
+            return self._load_conversation(kind)
 
-    def save_conversation(self, payload):
+    def save_conversation(self, payload, kind="analysis"):
         messages = payload.get("messages")
         if not isinstance(messages, list):
             raise ApiError(400, "messages が必要です")
         data = {"period": payload.get("period"), "messages": self._trim_conversation(messages),
                 "updatedAt": datetime.now(timezone.utc).isoformat()}
         with self._conversation_lock:
-            self._save_conversation_file(data)
+            self._save_conversation_file(data, kind)
         return data
 
-    def clear_conversation(self):
+    def clear_conversation(self, kind="analysis"):
         with self._conversation_lock:
-            p = self._conversation_path()
+            p = self._conversation_path(kind)
             if p.exists():
                 p.unlink()
         return {"ok": True}
@@ -1167,8 +1173,10 @@ class Book:
 
     def resolve_account(self, query):
         """MCP向け：科目名のヒント文字列を勘定科目に解決する。
-        学習済みマッピング → フルパス完全一致 → 末端名／末尾の一意一致、の順に試す。
-        解決できなければ候補一覧（0件 or 複数件）を返す"""
+        学習済みマッピング → フルパス完全一致 → 末端名／末尾の一意一致 → 科目名の一部に一致、の順に試す
+        （いずれも大文字・小文字は区別しない）。一部一致で候補が1件に絞れればそれも解決扱いにする
+        （例：「paypayカード」→「負債:クレジットカード:PayPayカード(JCB)」）。
+        それでも複数残る・見つからない場合だけ候補一覧（複数件 or 0件）を返し、確認を求める"""
         q = (query or "").strip()
         if not q:
             raise ApiError(400, "query が必要です")
@@ -1184,13 +1192,16 @@ class Book:
             hit = next((c for c in candidates if c["guid"] == learned), None)
             if hit:
                 return resolved(hit, "learned")
-        exact = [c for c in candidates if c["full"] == q]
+        ql = q.lower()
+        exact = [c for c in candidates if c["full"].lower() == ql]
         if len(exact) == 1:
             return resolved(exact[0], "exact")
-        matches = [c for c in candidates if c["name"] == q or c["full"].endswith(":" + q)]
+        matches = [c for c in candidates if c["name"].lower() == ql or c["full"].lower().endswith(":" + ql)]
         if len(matches) == 1:
             return resolved(matches[0], "unique")
-        pool = matches or [c for c in candidates if q in c["full"]]
+        pool = matches or [c for c in candidates if ql in c["full"].lower()]
+        if len(pool) == 1:
+            return resolved(pool[0], "partial")
         return {"status": "ambiguous" if pool else "none",
                 "candidates": [{"guid": c["guid"], "name": c["full"], "type": c["type"]} for c in pool[:20]]}
 
@@ -1540,6 +1551,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, b.save_conversation(self._body()))
         if method == "DELETE" and p == "/api/ai/conversation":
             return self._send(200, b.clear_conversation())
+        if method == "GET" and p == "/api/ai/ledger-conversation":
+            return self._send(200, b.get_conversation("ledger"))
+        if method == "PUT" and p == "/api/ai/ledger-conversation":
+            return self._send(200, b.save_conversation(self._body(), "ledger"))
+        if method == "DELETE" and p == "/api/ai/ledger-conversation":
+            return self._send(200, b.clear_conversation("ledger"))
         if method == "GET" and p == "/api/mf-import/mappings":
             return self._send(200, b.mf_import_mappings())
         if method == "POST" and p == "/api/mf-import/mappings":

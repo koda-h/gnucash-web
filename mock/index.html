@@ -553,6 +553,11 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-composer input{flex:1;height:36px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);padding:0 11px;outline:none;min-width:0}
 .ai-composer input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .ai-hint{padding:0 20px 14px;display:block}
+.ai-tab-bar{padding:0 20px 14px}
+.ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
+.ai-pending .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
+.ai-pending .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.ai-pending-bar{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 .link-btn{border:0;background:none;color:var(--accent);padding:0;cursor:pointer;font:inherit;font-weight:500;text-decoration:underline}
 .switch{position:relative;display:inline-block;width:40px;height:22px;flex:none}
 .switch input{position:absolute;opacity:0;width:1px;height:1px}
@@ -604,7 +609,7 @@ try {
       <button type="button" class="nav-icon" id="navSearch" data-tip="取引検索" aria-label="取引検索">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       </button>
-      <button type="button" class="nav-icon" id="navAi" data-tip="AI分析" aria-label="AI分析">
+      <button type="button" class="nav-icon" id="navAi" data-tip="AIアシスタント" aria-label="AIアシスタント">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/></svg>
       </button>
     </div>
@@ -1969,7 +1974,8 @@ function render({scrollBottom = false, anchor = null} = {}){
   // 画面の種類に合わせて URL を同期する（最近の取引なら BASE#recent、それ以外なら BASE）。
   // 静的ホスティングでも再読み込みできるよう、パスではなくハッシュで切り替える。
   // 履歴を汚さないよう pushState ではなく replaceState を使う
-  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : state.view === 'import' ? '#import' : state.view === 'stats' ? '#stats' : state.view === 'search' ? '#search' : state.view === 'ai' ? '#ai' : '');
+  const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : state.view === 'import' ? '#import' : state.view === 'stats' ? '#stats' : state.view === 'search' ? '#search'
+    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '#ai-ledger' : '#ai-analysis') : '');
   // file:// や data: で開くとドキュメントの origin が null になり replaceState が
   // SecurityError を投げることがある。URL同期に失敗しても描画自体は続行する
   if (location.pathname + location.search + location.hash !== url) {
@@ -1977,7 +1983,8 @@ function render({scrollBottom = false, anchor = null} = {}){
   }
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
-  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.view === 'search' ? '__search' : state.view === 'ai' ? '__ai' : state.selected;
+  const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.view === 'search' ? '__search'
+    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '__ailedger' : '__ai') : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   renderSidebar();
@@ -2377,7 +2384,7 @@ function renderSearch(){
     </div>`;
 }
 
-/* ---------- AI分析 ---------- */
+/* ---------- AIアシスタント：分析タブ ---------- */
 const AI_PERIODS = [['3m', '3ヶ月'], ['6m', '6ヶ月'], ['1y', '1年'], ['2y', '2年'], ['year', '今年'], ['lastYear', '前年'], ['all', '全期間']];
 // 分析対象期間のプリセット → {from, to}（'YYYY-MM-DD'。全期間は十分に古い日付を下限にする）
 function aiRange(period, today){
@@ -2400,12 +2407,18 @@ function aiPeriodLabel(period, range){
 }
 // 取引の説明・メモを取得する件数の上限（期間が長いほど、直近偏重にならないよう増やす）
 const aiTxLimit = period => ({'2y': 400, all: 800})[period] || 200;
+const AI_TABS = [['analysis', '分析'], ['ledger', '記帳']];
 function openAi(){
   state.view = 'ai'; state.editing = null; state.q = '';
   state.drafts = {}; state.openSplits.clear();
+  if (!state.aiTab) state.aiTab = 'analysis';
   if (!state.ai) {
     state.ai = {period: '1y', range: null, contextPeriod: null, context: null, messages: [], loading: false};
     loadAiConversation();
+  }
+  if (!state.aiLedger) {
+    state.aiLedger = {messages: [], loading: false, pending: null};
+    loadAiLedgerConversation();
   }
   app.classList.add('show-main');
   render();
@@ -2444,6 +2457,153 @@ function clearAiConversation(){
   render();
   try { localStorage.removeItem(AI_CONV_KEY); } catch (e) {}
 }
+
+/* ---------- AIアシスタント：記帳タブ（モック） ---------- */
+// 本番は /api/ai/ledger-conversation（サーバー側ファイル）、モックは別の localStorage キーに保存する
+const AI_LEDGER_CONV_KEY = 'aiLedgerConversation';
+function loadAiLedgerConversation(){
+  try {
+    const s = localStorage.getItem(AI_LEDGER_CONV_KEY);
+    const conv = s ? JSON.parse(s) : null;
+    if (conv?.messages?.length) { state.aiLedger.messages = conv.messages; render(); }
+  } catch (e) {}
+}
+function saveAiLedgerConversation(st){
+  st.messages = trimAiMessages(st.messages);
+  try { localStorage.setItem(AI_LEDGER_CONV_KEY, JSON.stringify({messages: st.messages})); } catch (e) {}
+}
+function clearAiLedgerConversation(){
+  state.aiLedger.messages = []; state.aiLedger.pending = null;
+  render();
+  try { localStorage.removeItem(AI_LEDGER_CONV_KEY); } catch (e) {}
+}
+// 本番の /api/mcp/resolve-account と同じロジック（学習済み→完全一致→一意一致）をモックで再現する。
+// 学習結果も本番と同じ考え方で localStorage に保存する（本番は data/mcp-mappings.json）
+const AI_LEDGER_CREDIT_TYPES = new Set(['CREDIT', 'LIABILITY', 'PAYABLE', 'INCOME', 'EQUITY']);
+function loadMockAccountMappings(){
+  try { return JSON.parse(localStorage.getItem('mcpAccountMappings') || '{}'); } catch (e) { return {}; }
+}
+function saveMockAccountMapping(query, guid){
+  const m = loadMockAccountMappings();
+  m[query] = guid;
+  try { localStorage.setItem('mcpAccountMappings', JSON.stringify(m)); } catch (e) {}
+}
+function mockResolveAccount(query){
+  const q = (query || '').trim();
+  if (!q) return {status: 'none', candidates: []};
+  const candidates = state.book.accounts.filter(a => !a.placeholder);
+  const withExtra = a => ({guid: a.guid, name: fullName(a.guid), type: a.type, credit: AI_LEDGER_CREDIT_TYPES.has(a.type)});
+  const learned = loadMockAccountMappings()[q];
+  if (learned) {
+    const hit = candidates.find(a => a.guid === learned);
+    if (hit) return {status: 'resolved', source: 'learned', ...withExtra(hit)};
+  }
+  const exact = candidates.filter(a => fullName(a.guid) === q);
+  if (exact.length === 1) return {status: 'resolved', source: 'exact', ...withExtra(exact[0])};
+  const matches = candidates.filter(a => a.name === q || fullName(a.guid).endsWith(':' + q));
+  if (matches.length === 1) return {status: 'resolved', source: 'unique', ...withExtra(matches[0])};
+  const pool = matches.length ? matches : candidates.filter(a => fullName(a.guid).includes(q));
+  return {status: pool.length ? 'ambiguous' : 'none', candidates: pool.slice(0, 20).map(a => ({guid: a.guid, name: fullName(a.guid), type: a.type}))};
+}
+function resolveLedgerField(hint, confirmed, label){
+  const text = (confirmed || hint || '').trim();
+  if (!text) return {error: `${label}が指定されていません。`};
+  const r = mockResolveAccount(text);
+  if (r.status !== 'resolved') {
+    const cand = r.status === 'none' ? '該当する勘定科目が見つかりませんでした。正式な科目名を教えてください。'
+      : `候補が複数あり特定できません。どれか教えてください。\n${r.candidates.map(c => `- ${c.name}`).join('\n')}`;
+    return {error: `${label}「${text}」: ${cand}`};
+  }
+  if (confirmed && hint && confirmed.trim() !== hint.trim()) saveMockAccountMapping(hint.trim(), r.guid);
+  return {resolved: r};
+}
+function execLedgerTool(input){
+  const amount = Number(input.amount);
+  if (!isFinite(amount) || amount === 0) return {error: 'amount には 0 以外の数値を指定してください。'};
+  const catRes = resolveLedgerField(input.category, input.confirmed_category, 'category');
+  const payRes = resolveLedgerField(input.payment_account, input.confirmed_payment_account, 'payment_account');
+  if (catRes.error || payRes.error) {
+    return {error: [catRes.error, payRes.error].filter(Boolean).join('\n') + '\n\n確認できたら、正式な科目名を教えてください。'};
+  }
+  const date = input.date || state.today;
+  state.aiLedger.pending = {category: catRes.resolved, payment: payRes.resolved, amount: Math.abs(amount),
+                             date, desc: input.description || ''};
+  return {ok: true};
+}
+function aiPendingCard(p){
+  if (!p) return '';
+  const c = bookCommodity();
+  return `
+    <div class="ai-pending">
+      <div class="lbl">この内容で記録しますか？</div>
+      <div>${esc(p.date)}　${esc(p.category.name)}　${money(p.amount, c)}</div>
+      <div class="sub">${esc(p.payment.name)} から支払い${p.desc ? '　説明: ' + esc(p.desc) : ''}</div>
+      <div class="ai-pending-bar">
+        <button type="button" class="btn ghost" id="aiPendingCancel">キャンセル</button>
+        <button type="button" class="btn primary" id="aiPendingConfirm">記録する</button>
+      </div>
+    </div>`;
+}
+// 「食費 500円 現金」のような入力から金額・科目を取り出す簡易パターンマッチ
+// （※ モックのダミー解析。実装では実際のAIが add_transaction ツールを呼び出して解釈する）
+function parseLedgerText(text){
+  const m = text.match(/([0-9０-９,，]+)\s*円?/);
+  const amount = m ? parseAmt(m[1]) : NaN;
+  const rest = text.replace(m ? m[0] : '', '').trim();
+  const [category, payment] = rest.split(/[\s　,、]+/).filter(Boolean);
+  return {amount, category, payment};
+}
+async function sendAiLedgerText(text){
+  const st = state.aiLedger;
+  if (!text || st.loading) return;
+  st.messages.push({role: 'user', content: text});
+  st.loading = true;
+  st.pending = null;
+  render({scrollBottom: true});
+  setTimeout(() => {
+    const {amount, category, payment} = parseLedgerText(text);
+    let reply;
+    if (!category || !isFinite(amount) || amount === 0) {
+      reply = '金額と科目名を教えてください（例：「食費 500円 現金」）。';
+    } else {
+      const res = execLedgerTool({amount, category, payment_account: payment});
+      reply = res.error ? res.error
+        : `${category}　${money(Math.abs(amount), bookCommodity())}を${payment ? payment + 'から' : ''}記録する準備ができました。内容を確認のうえ、画面の「記録する」で確定してください。`;
+    }
+    st.messages.push({role: 'assistant', content: reply});
+    st.loading = false;
+    render({scrollBottom: true});
+    saveAiLedgerConversation(st);
+  }, 700);
+}
+async function sendAiLedgerMessage(form){
+  const input = form.elements.msg;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  await sendAiLedgerText(text);
+}
+async function confirmAiPending(){
+  const st = state.aiLedger, p = st.pending;
+  if (!p) return;
+  st.pending = null;
+  try {
+    await api('POST', '/api/transactions', {
+      account: p.category.guid, other: p.payment.guid, date: p.date, desc: p.desc,
+      amount: String(p.category.credit ? -p.amount : p.amount),
+    });
+    st.messages.push({role: 'assistant', content: `✅ 記録しました：${p.date}　${p.category.name}　${money(p.amount, bookCommodity())}（${p.payment.name}）`});
+  } catch (e) {
+    st.messages.push({role: 'assistant', content: `記録に失敗しました（${e.message}）。`, error: true});
+  }
+  render({scrollBottom: true});
+  saveAiLedgerConversation(st);
+}
+function cancelAiPending(){
+  state.aiLedger.pending = null;
+  render();
+}
+
 // 期間に対応する集計データがまだ無い・古い（期間を変更した）場合だけ組み立て直す
 async function ensureAiContext(){
   const st = state.ai;
@@ -2627,20 +2787,24 @@ function aiBubble(m){
 }
 function renderAi(){
   const main = document.getElementById('main');
-  const st = state.ai;
   const header = `
     <div class="header"><div>
       <button class="back" data-back>‹ 勘定科目一覧</button>
-      <h1 class="title">AI分析</h1>
-      <div class="desc">集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します</div>
-    </div></div>`;
-
+      <h1 class="title">AIアシスタント</h1>
+      <div class="desc">${state.aiTab === 'ledger' ? 'チャットでの指示をもとに、取引をGnuCash Webに記録します' : '集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します'}</div>
+    </div></div>
+    <div class="ai-tab-bar">
+      <div class="chips" role="tablist">${AI_TABS.map(([k,l]) => `<button class="chip ${state.aiTab===k?'on':''}" data-ai-tab="${k}">${l}</button>`).join('')}</div>
+    </div>`;
+  main.innerHTML = header + (state.aiTab === 'ledger' ? renderAiLedgerBody() : renderAiAnalysisBody());
+}
+function renderAiAnalysisBody(){
+  const st = state.ai;
   const detailOn = state.aiIncludeTxDetails;
   const detailNote = detailOn
     ? `取引の説明・メモ（最大${aiTxLimit(st.period)}件）も含めて送信します。個人情報が含まれる場合があるのでご注意ください。`
     : '個別の取引の説明・メモは送信されません。';
-
-  main.innerHTML = header + `
+  return `
     <div class="card ai-card">
       <div class="ai-period-bar">
         <div class="chips" role="tablist">${AI_PERIODS.map(([k,l]) => `<button class="chip ${st.period===k?'on':''}" data-ai-period="${k}">${l}</button>`).join('')}</div>
@@ -2663,6 +2827,31 @@ function renderAi(){
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
       <div class="hint ai-hint">※ イメージ確認用のダミー回答です。実装時は実際のAIが回答します。会話は自動的に保存され、直近20往復分のみ保持されます（古いやり取りは自動的に削除されます）。</div>
+    </div>`;
+}
+function renderAiLedgerBody(){
+  const st = state.aiLedger;
+  const writable = canWrite();
+  return `
+    <div class="card ai-card">
+      <div class="ai-period-bar">
+        <div class="ai-note" style="margin:0">「食費 500円」のように話しかけると、科目を確認のうえ取引を記録します。</div>
+        ${st.messages.length ? '<button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>' : ''}
+      </div>
+      <div class="scroll ai-scroll" id="scroll" data-account="__ailedger">
+        ${!writable ? `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため記帳できません' : 'GnuCash デスクトップのロック中のため記帳できません'}</div>` : ''}
+        ${st.messages.length ? st.messages.map(aiBubble).join('') : `
+          <div class="ai-empty">
+            <div class="ai-note">例：「食費 500円」「給与 300000円 普通預金」のように話しかけてください。科目が曖昧な場合は確認します。実際の記録前に必ず確認画面が表示されます。</div>
+          </div>`}
+        ${st.loading ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
+        ${aiPendingCard(st.pending)}
+      </div>
+      <form class="ai-composer" data-form="ai-ledger-chat" autocomplete="off">
+        <input name="msg" placeholder="例：食費 500円" autocomplete="off" ${st.loading || !writable ? 'disabled' : ''}>
+        <button type="submit" class="btn primary" ${st.loading || !writable ? 'disabled' : ''}>送信</button>
+      </form>
+      <div class="hint ai-hint">※ イメージ確認用の簡易解析です。実装時は実際のAIが解釈します。実際の記録はこの画面で確認してから行われます。</div>
     </div>`;
 }
 
@@ -3400,6 +3589,10 @@ main.addEventListener('click', e => {
   if (t.closest('#statsAddAcct')) return addStatsAccount();
   if (t.closest('#aiOverview')) return askAiOverview();
   if (t.closest('#aiClear')) { clearAiConversation(); return; }
+  if (t.closest('#aiLedgerClear')) { clearAiLedgerConversation(); return; }
+  if (t.closest('#aiPendingConfirm')) return confirmAiPending();
+  if (t.closest('#aiPendingCancel')) { cancelAiPending(); return; }
+  const aiTab = t.closest('[data-ai-tab]'); if (aiTab) { state.aiTab = aiTab.dataset.aiTab; render(); return; }
   const aip = t.closest('[data-ai-period]'); if (aip) { state.ai.period = aip.dataset.aiPeriod; render(); return; }
   if (t.closest('[data-settings]')) return openSettings();
   const statsRemove = t.closest('[data-stats-remove]');
@@ -3494,6 +3687,7 @@ main.addEventListener('keydown', e => {
 main.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.dataset.form === 'ai-chat') return sendAiMessage(e.target);
+  if (e.target.dataset.form === 'ai-ledger-chat') return sendAiLedgerMessage(e.target);
   e.target.dataset.mode === 'recent' ? saveRecent(e.target) : save(e.target);
 });
 main.addEventListener('reset', e => setTimeout(() => {
@@ -3753,7 +3947,7 @@ function settingsBody(){
         <option value="dark" ${theme === 'dark' ? 'selected' : ''}>ダーク</option>
       </select>
     </div>
-    <div class="settings-section-h">AI分析</div>
+    <div class="settings-section-h">AIアシスタント（分析）</div>
     <div class="settings-row">
       <div><div class="lbl">取引の説明・メモを考慮する</div>
         <div class="sub">オンにすると、分析対象期間の取引の説明・メモ（期間に応じて最大200〜800件）もAIに送信します。店名や個人名などが含まれる場合があるのでご注意ください。</div></div>
@@ -3842,7 +4036,10 @@ async function boot(){
   if (location.hash === '#import' || /\/import\/?$/.test(location.pathname)) return openImport();
   if (location.hash === '#stats' || /\/stats\/?$/.test(location.pathname)) return openStats();
   if (location.hash === '#search' || /\/search\/?$/.test(location.pathname)) return openSearch();
-  if (location.hash === '#ai' || /\/ai\/?$/.test(location.pathname)) return openAi();
+  if (location.hash === '#ai' || location.hash === '#ai-analysis' || location.hash === '#ai-ledger' || /\/ai\/?$/.test(location.pathname)) {
+    state.aiTab = location.hash === '#ai-ledger' ? 'ledger' : 'analysis';
+    return openAi();
+  }
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
