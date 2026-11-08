@@ -571,6 +571,10 @@ form.busy{opacity:.6;pointer-events:none}
 .switch input:focus-visible + .slider{box-shadow:0 0 0 3px var(--accent-soft)}
 .settings-section-h{padding:14px 20px 4px;font-size:12.5px;font-weight:700;letter-spacing:.06em;color:var(--muted)}
 .settings-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px}
+.mcp-keys-panel{margin:4px 20px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2);overflow:hidden}
+.mcp-newkey{padding:12px 14px;border-bottom:1px solid var(--border)}
+.mcp-newkey .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
+.mcp-newkey .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
 .settings-row + .settings-row{border-top:1px solid var(--border)}
 .settings-row .lbl{font-size:13.5px;font-weight:600;color:var(--text)}
 .settings-row .sub{font-size:12px;color:var(--muted);margin-top:3px;line-height:1.5}
@@ -646,7 +650,6 @@ try {
 <datalist id="statsAcctList"></datalist>
 <datalist id="descList"></datalist>
 <dialog class="keys" id="keysDialog"></dialog>
-<dialog class="keys" id="settingsDialog"></dialog>
 <dialog class="keys acct" id="acctDialog"></dialog>
 <dialog class="keys confirm" id="confirmDialog"></dialog>
 
@@ -747,15 +750,18 @@ function loadMockMcpKeys(){
 function saveMockMcpKeys(keys){
   try { localStorage.setItem('mcpKeys', JSON.stringify(keys)); } catch (e) {}
 }
+function rerenderSettings(){
+  if (state.view === 'settings') render();
+}
 async function setMcpEnabled(v){
   state.mcpEnabled = v;
   try { localStorage.setItem('mcpEnabled', v ? '1' : '0'); } catch (e) {}
   if (v && !state.mcpKeys) await loadMcpKeys();
-  renderSettingsDialog();
+  rerenderSettings();
 }
 async function loadMcpKeys(){
   state.mcpKeys = loadMockMcpKeys();
-  renderSettingsDialog();
+  rerenderSettings();
 }
 async function createMcpKey(label){
   const keys = loadMockMcpKeys();
@@ -772,9 +778,10 @@ async function deleteMcpKey(id, label){
   saveMockMcpKeys(loadMockMcpKeys().filter(k => k.id !== id));
   await loadMcpKeys();
 }
-function renderSettingsDialog(){
-  const d = document.getElementById('settingsDialog');
-  if (d.open) d.innerHTML = settingsBody();
+async function copyMcpKey(){
+  const input = document.getElementById('mcpNewKeyInput');
+  try { await navigator.clipboard.writeText(input.value); toast('コピーしました'); }
+  catch (err) { input.select(); toast('選択状態にしました。Cmd/Ctrl+Cでコピーしてください'); }
 }
 let A = {}, CHILDREN = {}, ROOTS = [], TOTAL = {};
 
@@ -1631,6 +1638,7 @@ function renderMain(){
   if (state.view === 'stats') return renderStats();
   if (state.view === 'search') return renderSearch();
   if (state.view === 'ai') return renderAi();
+  if (state.view === 'settings') return renderSettings();
   const main = document.getElementById('main');
   const id = state.selected;
   if (!id) { main.innerHTML = '<div class="loading">左の一覧から勘定科目を選んでください</div>'; return; }
@@ -1991,7 +1999,8 @@ function render({scrollBottom = false, anchor = null} = {}){
   // 静的ホスティングでも再読み込みできるよう、パスではなくハッシュで切り替える。
   // 履歴を汚さないよう pushState ではなく replaceState を使う
   const url = BASE + location.search + (state.view === 'recent' ? '#recent' : state.view === 'report' ? '#report' : state.view === 'import' ? '#import' : state.view === 'stats' ? '#stats' : state.view === 'search' ? '#search'
-    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '#ai-ledger' : '#ai-analysis') : '');
+    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '#ai-ledger' : '#ai-analysis')
+    : state.view === 'settings' ? '#settings' : '');
   // file:// や data: で開くとドキュメントの origin が null になり replaceState が
   // SecurityError を投げることがある。URL同期に失敗しても描画自体は続行する
   if (location.pathname + location.search + location.hash !== url) {
@@ -2000,7 +2009,8 @@ function render({scrollBottom = false, anchor = null} = {}){
   // 同じ科目を描き直すときはスクロール位置を引き継ぐ（innerHTML の作り直しで先頭に戻るのを防ぐ）
   const old = document.getElementById('scroll');
   const viewKey = state.view === 'recent' ? '__recent' : state.view === 'report' ? '__report' : state.view === 'import' ? '__import' : state.view === 'stats' ? '__stats' : state.view === 'search' ? '__search'
-    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '__ailedger' : '__ai') : state.selected;
+    : state.view === 'ai' ? (state.aiTab === 'ledger' ? '__ailedger' : '__ai')
+    : state.view === 'settings' ? '__settings' : state.selected;
   const keep = old && old.dataset.account === viewKey ? old.scrollTop : null;
   saveRecentComposer();
   renderSidebar();
@@ -3611,6 +3621,9 @@ main.addEventListener('click', e => {
   const aiTab = t.closest('[data-ai-tab]'); if (aiTab) { state.aiTab = aiTab.dataset.aiTab; render(); return; }
   const aip = t.closest('[data-ai-period]'); if (aip) { state.ai.period = aip.dataset.aiPeriod; render(); return; }
   if (t.closest('[data-settings]')) return openSettings();
+  if (t.closest('[data-copy-key]')) { copyMcpKey(); return; }
+  const delKey = t.closest('[data-del-mcp-key]');
+  if (delKey) { deleteMcpKey(delKey.dataset.delMcpKey, delKey.dataset.label); return; }
   const statsRemove = t.closest('[data-stats-remove]');
   if (statsRemove) {
     state.stats.selected = state.stats.selected.filter(id => id !== statsRemove.dataset.statsRemove);
@@ -3710,6 +3723,7 @@ main.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.dataset.form === 'ai-chat') return sendAiMessage(e.target);
   if (e.target.dataset.form === 'ai-ledger-chat') return sendAiLedgerMessage(e.target);
+  if (e.target.matches('[data-add-mcp-key]')) { createMcpKey(e.target.elements.label.value.trim()); return; }
   e.target.dataset.mode === 'recent' ? saveRecent(e.target) : save(e.target);
 });
 main.addEventListener('reset', e => setTimeout(() => {
@@ -3769,6 +3783,9 @@ main.addEventListener('change', e => {
   if (e.target.id === 'reportTo') { state.reportTo = e.target.value; changeReportRange(); return; }
   if (e.target.id === 'statsFrom') { state.stats.from = e.target.value || state.stats.from; render(); return; }
   if (e.target.id === 'statsTo') { state.stats.to = e.target.value || state.stats.to; render(); return; }
+  if (e.target.id === 'themeSelect') return setTheme(e.target.value);
+  if (e.target.id === 'mcpEnabledToggle') return setMcpEnabled(e.target.checked);
+  if (e.target.id === 'aiIncludeTxDetailsToggle') return setAiIncludeTxDetails(e.target.checked);
   if (e.target.name !== 'desc') return;
   const f = e.target.closest('form');
   f.dataset.form === 'rnew' ? quickfillPair(f) : quickfill(f);
@@ -3954,17 +3971,29 @@ document.getElementById('keysDialog').addEventListener('submit', async e => {
 
 /* ---------- 設定 ---------- */
 function openSettings(){
-  const d = document.getElementById('settingsDialog');
+  state.view = 'settings'; state.editing = null; state.q = '';
+  state.drafts = {}; state.openSplits.clear();
   state.mcpNewKey = null;
-  d.innerHTML = settingsBody();
-  d.showModal();
+  app.classList.add('show-main');
+  render({nav: true});
   if (state.mcpEnabled && !state.mcpKeys) loadMcpKeys();
+}
+function renderSettings(){
+  const main = document.getElementById('main');
+  const header = `
+    <div class="header"><div>
+      <button class="back" data-back>‹ 勘定科目一覧</button>
+      <h1 class="title">設定</h1>
+    </div></div>`;
+  main.innerHTML = header + `
+    <div class="card">
+      <div class="scroll" id="scroll" data-account="__settings">${settingsBody()}</div>
+    </div>`;
 }
 function settingsBody(){
   const on = state.aiIncludeTxDetails;
   const theme = state.theme;
   return `
-    <div class="keys-h"><h2>設定</h2><button type="button" class="icon-btn" data-close aria-label="閉じる">✕</button></div>
     <div class="settings-section-h">表示</div>
     <div class="settings-row">
       <div><div class="lbl">配色</div>
@@ -3993,7 +4022,7 @@ function mcpKeysBody(){
   const fmt = iso => iso ? new Date(iso).toLocaleString('ja-JP', {year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '未使用';
   const nk = state.mcpNewKey;
   const newKeyBox = nk ? `
-    <div class="settings-row" style="display:block;background:var(--surface-2);border-radius:10px;margin:4px 20px 0">
+    <div class="mcp-newkey">
       <div class="lbl">発行したAPIキー（今だけ表示されます）</div>
       <div class="sub">このキーはもう一度表示できません。MCPサーバーの GNUCASH_API_KEY にコピーしてください。</div>
       <div class="row2" style="margin-top:8px">
@@ -4006,41 +4035,21 @@ function mcpKeysBody(){
       <span style="color:var(--muted)">${keyIcon}</span>
       <div class="k-body"><div class="k-name">${esc(k.label) || '(名前なし)'}</div>
         <div class="k-meta">発行 ${fmt(k.createdAt)}・最終使用 ${fmt(k.lastUsedAt)}</div></div>
-      <button type="button" class="btn danger" data-del-mcp-key="${esc(k.id)}" data-label="${esc(k.label)}">失効</button>
+      <button type="button" class="btn danger" data-del-mcp-key="${esc(k.id)}" data-label="${esc(k.label)}">失効させる</button>
     </div>`).join('');
+  // MCP連携のトグルから独立した「設定全体の項目」に見えないよう、キー一覧・発行フォームは
+  // 枠線付きのパネルにまとめて、MCP連携セクションの一部であることを視覚的にわかりやすくする
   return `
-    ${newKeyBox}
-    <div class="keys-list">${state.mcpKeys === null ? '<div class="empty">読み込み中…</div>' : (list || '<div class="empty">発行されたAPIキーはありません</div>')}</div>
-    <form class="keys-add" data-add-mcp-key>
-      <div class="row2"><input class="f" name="label" maxlength="60" placeholder="名前（任意。例: Claude Desktop）" aria-label="APIキーの名前">
-        <button type="submit" class="btn primary">${keyIcon}発行</button></div>
-      <span class="hint">発行したキーは mcp-server/server.py の GNUCASH_API_KEY に設定してください</span>
-    </form>`;
+    <div class="mcp-keys-panel">
+      ${newKeyBox}
+      <div class="keys-list">${state.mcpKeys === null ? '<div class="empty">読み込み中…</div>' : (list || '<div class="empty">発行されたAPIキーはありません</div>')}</div>
+      <form class="keys-add" data-add-mcp-key>
+        <div class="row2"><input class="f" name="label" maxlength="60" placeholder="名前（任意。例: Claude Desktop）" aria-label="APIキーの名前">
+          <button type="submit" class="btn primary">${keyIcon}発行</button></div>
+        <span class="hint">発行したキーは mcp-server/server.py の GNUCASH_API_KEY に設定してください</span>
+      </form>
+    </div>`;
 }
-document.getElementById('settingsDialog').addEventListener('click', async e => {
-  const d = document.getElementById('settingsDialog');
-  if (e.target.closest('[data-close]') || e.target === d) return d.close();
-  if (e.target.closest('[data-copy-key]')) {
-    const input = document.getElementById('mcpNewKeyInput');
-    try { await navigator.clipboard.writeText(input.value); toast('コピーしました'); }
-    catch (err) { input.select(); toast('選択状態にしました。Cmd/Ctrl+Cでコピーしてください'); }
-    return;
-  }
-  const del = e.target.closest('[data-del-mcp-key]');
-  if (del) await deleteMcpKey(del.dataset.delMcpKey, del.dataset.label);
-});
-document.getElementById('settingsDialog').addEventListener('submit', async e => {
-  e.preventDefault();
-  if (!e.target.matches('[data-add-mcp-key]')) return;
-  await createMcpKey(e.target.elements.label.value.trim());
-});
-document.getElementById('settingsDialog').addEventListener('change', e => {
-  if (e.target.id === 'themeSelect') return setTheme(e.target.value);
-  if (e.target.id === 'mcpEnabledToggle') return setMcpEnabled(e.target.checked);
-  if (e.target.id !== 'aiIncludeTxDetailsToggle') return;
-  setAiIncludeTxDetails(e.target.checked);
-  if (state.view === 'ai') render();   // AI分析画面が開いていれば注記・コンテキストを更新
-});
 
 /* ---------- 起動 ---------- */
 (async () => {
@@ -4068,6 +4077,7 @@ async function boot(){
     state.aiTab = location.hash === '#ai-ledger' ? 'ledger' : 'analysis';
     return openAi();
   }
+  if (location.hash === '#settings' || /\/settings\/?$/.test(location.pathname)) return openSettings();
   loadRecent().then(() => renderSidebar()).catch(() => {});
   // 最初は資産科目のうち取引件数が最も多いものを開く
   const first = state.book.accounts.filter(a => T(a.type).group === 'asset' && !a.placeholder && !CHILDREN[a.guid])
