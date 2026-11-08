@@ -725,6 +725,7 @@ const state = {
   search: null,           // 取引検索画面の状態 {q, rows}。null = まだ開いていない
   ai: null,               // AI分析画面の状態 {status, period, range, messages, loading, context, systemPrompt}。null = まだ開いていない
   aiAvailable: null,      // サーバーに GNUCASH_AI_API_KEY が設定されているか。null = まだ確認できていない（未確認時は使える前提で表示する）
+  notionAvailable: false, // サーバーに NOTION_MCP_TOKEN が設定されているか（分析タブでNotionに書き込めるか）
   showMonthHeaders: true, // 登録簿の月の区切り（見出し＋月合計）を表示するか。設定は localStorage に保存
   aiIncludeTxDetails: false, // AI分析：取引の説明・メモも送信するか。サーバー（app-settings.json）に保存される設定
   mcpEnabled: false,      // MCP連携（AIエージェントからの取引追加）を許可するか。サーバー（app-settings.json）に保存される設定
@@ -750,6 +751,7 @@ async function loadAppSettings(){
     const s = await api('GET', '/api/settings');
     state.aiIncludeTxDetails = !!s.aiIncludeTxDetails;
     state.aiAvailable = !!s.aiAvailable;
+    state.notionAvailable = !!s.notionAvailable;
     state.mcpEnabled = !!s.mcpEnabled;
     if (state.view === 'ai') render();
   } catch (e) {}
@@ -2386,6 +2388,7 @@ function buildAiSystemPrompt(period, range, ctx){
   lines.push(`現在の純資産: ${money(ctx.nw.total, c)}（資産 ${money(ctx.nw.assets, c)}・負債 ${money(ctx.nw.liab, c)}）`);
   if (ctx.txDetails) lines.push(`この期間の取引件数: ${ctx.txDetails.count}件。よく登場する取引の説明: ${ctx.txDetails.topDesc.join('、') || '（なし）'}`);
   lines.push('この数値をもとに、日本語で、簡潔かつ具体的にアドバイスしてください。金額は¥記号とカンマ区切りで表記し、断定的な助言は避けつつ実用的な提案を心がけてください。');
+  if (state.notionAvailable) lines.push('Notion連携が有効です。ユーザーから明示的に依頼されたときだけ、この分析結果をもとにNotionにページを作成・更新してください。頼まれていないのに自分から書き込まないでください。');
   return lines.join('\n');
 }
 const AI_OVERVIEW_PROMPT = '家計の状況について、概況と気になる点を教えてください。';
@@ -2482,10 +2485,10 @@ function updateAiStreamBubbleDom(st){
 // 発言は従来どおり非表示：aiBubble が配列 content を表示しないのと同じ扱い）
 // tools・execTool を引数化：分析タブ（AI_TOOLS/getMonthlyBreakdown）と記帳タブ
 // （LEDGER_TOOLS/execLedgerTool）で、別々のツール定義・実行関数を使い回す
-async function callAi(st, tools, execTool){
+async function callAi(st, tools, execTool, notion = false){
   for (let i = 0; i < 3; i++) {
     st.streamText = null;
-    const res = await streamAi({messages: st.messages, context: st.systemPrompt || '', tools}, delta => {
+    const res = await streamAi({messages: st.messages, context: st.systemPrompt || '', tools, notion}, delta => {
       st.streamText = (st.streamText || '') + delta;
       updateAiStreamBubbleDom(st);
     });
@@ -2513,7 +2516,7 @@ async function sendAiText(text){
   render({scrollBottom: true});
   try {
     await ensureAiContext();
-    await callAi(st, AI_TOOLS, tu => getMonthlyBreakdown(tu.input?.category));
+    await callAi(st, AI_TOOLS, tu => getMonthlyBreakdown(tu.input?.category), state.notionAvailable);
   } catch (e) {
     st.messages.push({role: 'assistant', content: `すみません、AIの呼び出しに失敗しました（${e.message}）。`, error: true});
   }
@@ -2737,6 +2740,7 @@ function renderAiAnalysisBody(){
         <div class="chips" role="tablist">${AI_PERIODS.map(([k,l]) => `<button class="chip ${st.period===k?'on':''}" data-ai-period="${k}">${l}</button>`).join('')}</div>
         <div class="ai-period-side">
           ${detailOn ? '<span class="tag">説明・メモを含む</span>' : ''}
+          ${state.notionAvailable ? '<span class="tag">Notion連携</span>' : ''}
           ${st.messages.length ? '<button type="button" class="btn ghost" id="aiClear">会話をクリア</button>' : ''}
         </div>
       </div>
@@ -2744,7 +2748,7 @@ function renderAiAnalysisBody(){
         ${st.messages.length ? st.messages.map(aiBubble).join('') : `
           <div class="ai-empty">
             <div class="ai-note">${detailNote}集計済みの数値（資産・負債の内訳、収益・費用の合計、純資産など）を外部のAI APIに送信します。
-              <button type="button" class="link-btn" data-settings>設定で変更</button></div>
+              <button type="button" class="link-btn" data-settings>設定で変更</button>${state.notionAvailable ? '　「この内容をNotionに書き込んで」のように頼むと、Notionにページを作成・更新できます。' : ''}</div>
             <button type="button" class="btn primary" id="aiOverview">概況を聞く</button>
           </div>`}
         ${st.streamText != null ? `<div class="ai-msg assistant raw" id="aiStreamBubble">${esc(st.streamText)}</div>` : ''}

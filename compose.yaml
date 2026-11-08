@@ -20,7 +20,9 @@ services:
       GNUCASH_AUTH_RP_ID: ${GNUCASH_AUTH_RP_ID:-localhost}
       GNUCASH_AUTH_ORIGIN: ${GNUCASH_AUTH_ORIGIN:-http://localhost:8000}
       GNUCASH_AUTH_SESSION_DAYS: ${GNUCASH_AUTH_SESSION_DAYS:-30}
-      # AI分析（.env で設定。未設定だとAI分析機能だけ使えない）
+      # AIアシスタント（.env で設定。未設定だとAIアシスタント機能だけ使えない）
       GNUCASH_AI_API_KEY: ${GNUCASH_AI_API_KEY:-}
       GNUCASH_AI_MODEL: ${GNUCASH_AI_MODEL:-claude-sonnet-5-5}
+      # Notion連携（分析タブ。.env で設定。未設定ならこの機能だけ無効）
+      NOTION_MCP_TOKEN: ${NOTION_MCP_TOKEN:-}
     restart: unless-stopped

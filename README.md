@@ -151,6 +151,26 @@ GnuCash ファイルそのものや個々の取引明細は送信しない。送
 
 質問・回答のたびに Anthropic API の利用料金が発生する（サーバー側に設定した `GNUCASH_AI_API_KEY` に課金される）。
 
+### 分析タブ：Notion連携
+
+分析タブから「この内容をNotionに書き込んで」のように頼むと、AIがNotionにページを作成・更新できる。Anthropic の Messages API の「MCPコネクタ」機能を使っており、Notionの公式リモートMCPサーバー（`https://mcp.notion.com/mcp`）にAnthropic側が直接接続する。GnuCash Web自体がNotionのAPIを呼ぶわけではない。
+
+#### 有効にする
+
+環境変数 `NOTION_MCP_TOKEN` を設定する。これはNotionの通常のインテグレーションシークレットとは別物の、**「MCPトークン」**という非対話用の静的トークン（Business・Enterpriseプランのみ、ワークスペースのオーナーがNotionのDeveloper portalで発行）。
+
+```bash
+GNUCASH_AI_API_KEY=sk-ant-... NOTION_MCP_TOKEN=ntn-mcp-... python3 web/server.py --write
+```
+
+未設定でもAIアシスタントの他の機能（分析タブ・記帳タブとも）には影響しない。Business・Enterpriseプラン以外では、この連携機能自体を使う手段がない（Notion公式のホスト型MCPサーバーは非対話での接続にMCPトークンが必須）。
+
+#### 注意点
+
+- **現時点では分析タブのみ**。記帳タブ（取引の追加）では使えない
+- Notionへの書き込みは、**記帳タブのadd_transactionと違って画面での確認ステップを挟まない**。MCPコネクタはAnthropic側でツール呼び出しから実行まで完結するため、こちら側で止めて確認を求めることができない。システムプロンプトでは「明示的に頼まれたときだけ書き込む」よう指示しているが、確実な歯止めではない点に注意
+- 書き込み先のページ・データベースの範囲は、Notion側でそのワークスペースに許可した権限（MCPトークンを使う場合はワークスペース全体）に従う
+
 ## MCP連携（外部のAIエージェントから取引を記録する）
 
 `mcp-server/server.py` を使うと、Claude Desktop・Claude Code などの MCP クライアントから「食費 500円」のような指示で GnuCash Web に取引を追加できる。GnuCash Web 本体とは別プロセスで動く、標準ライブラリのみの MCP サーバー（stdio）。

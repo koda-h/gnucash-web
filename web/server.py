@@ -13,8 +13,10 @@ GNUCASH_FORCE / GNUCASH_BACKUP_DIR でも指定できる（Docker 用）。
 パスキー認証（GNUCASH_AUTH=1）を使う場合は py_webauthn が必要（pip install -r requirements.txt）。
 設定は GNUCASH_AUTH_RP_ID / GNUCASH_AUTH_ORIGIN / GNUCASH_AUTH_SESSION_DAYS / GNUCASH_AUTH_FILE。
 
-AI分析機能（画面の「AI分析」）を使うには GNUCASH_AI_API_KEY（Anthropic の API キー）が必要。
+AIアシスタント機能（画面の「AIアシスタント」）を使うには GNUCASH_AI_API_KEY（Anthropic の API キー）が必要。
 モデルは GNUCASH_AI_MODEL で変更できる（既定 claude-sonnet-5-5）。未設定でもそれ以外の機能は使える。
+分析タブからNotionに書き込む連携には、別途 NOTION_MCP_TOKEN（Notion Business/Enterpriseプランの
+MCPトークン）が必要（未設定ならこの連携機能だけ無効）。
 
 スキーマは docs/gnucash-db-schema.md を参照。
 """
@@ -1036,6 +1038,8 @@ class Book:
         # aiAvailable は保存された設定ではなく、サーバーに API キーがあるかどうかをその場で返す
         # （フロント側で「分析を開始」前にAI機能が使えるか案内するため）
         d["aiAvailable"] = bool(os.environ.get("GNUCASH_AI_API_KEY"))
+        # notionAvailable も同様にその場で返す（AI分析タブでNotion連携ツールを使わせてよいかの判定用）
+        d["notionAvailable"] = bool(os.environ.get("NOTION_MCP_TOKEN"))
         return d
 
     def update_settings(self, patch):
@@ -1366,11 +1370,23 @@ class Handler(BaseHTTPRequestHandler):
             # system プロンプトはプロンプトキャッシュの対象にする（同じ内容を毎回の往復で
             # 送り直すことになるこの設計での料金対策）
             body["system"] = [{"type": "text", "text": context, "cache_control": {"type": "ephemeral"}}]
+        betas = ["thinking-binding-controls-2026-08-01"]
+        # Notion連携：MCPコネクタ（Anthropic側がリモートのNotion MCPサーバーに直接接続し、
+        # ツールの列挙・実行まで行う）。フロントが notion:true を指定し、かつサーバーに
+        # NOTION_MCP_TOKEN（Notion Business/Enterpriseプランで発行する非対話用トークン）が
+        # 設定されているときだけ有効にする。ツール実行はAnthropic側で完結するため、
+        # 他のツール（get_monthly_breakdown 等）と違い、こちら側で結果を返す必要はない
+        notion_token = os.environ.get("NOTION_MCP_TOKEN") if payload.get("notion") else None
+        if notion_token:
+            body["mcp_servers"] = [{"type": "url", "url": "https://mcp.notion.com/mcp", "name": "notion",
+                                     "authorization_token": notion_token}]
+            tools = (tools or []) + [{"type": "mcp_toolset", "mcp_server_name": "notion"}]
+            betas.append("mcp-client-2025-11-20")
         if tools:
             body["tools"] = tools
         req = urllib.request.Request(self.AI_API_URL, data=json.dumps(body).encode(), method="POST", headers={
             "x-api-key": api_key, "anthropic-version": self.AI_API_VERSION,
-            "anthropic-beta": "thinking-binding-controls-2026-08-01",
+            "anthropic-beta": ",".join(betas),
             "content-type": "application/json"})
         try:
             upstream = urllib.request.urlopen(req, timeout=60)
