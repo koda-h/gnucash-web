@@ -549,9 +549,12 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-typing span:nth-child(2){animation-delay:.15s}
 .ai-typing span:nth-child(3){animation-delay:.3s}
 @keyframes ai-bounce{0%,80%,100%{opacity:.3;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
-.ai-composer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border-strong)}
-.ai-composer input{flex:1;height:36px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);padding:0 11px;outline:none;min-width:0}
-.ai-composer input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.ai-composer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border-strong);align-items:flex-end}
+.ai-composer input,.ai-composer textarea{flex:1;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);outline:none;min-width:0;font:inherit;color:inherit}
+.ai-composer input{height:36px;padding:0 11px}
+.ai-composer textarea{min-height:36px;max-height:160px;padding:8px 11px;line-height:1.4;resize:none;overflow-y:auto}
+.ai-composer input:focus,.ai-composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.ai-composer button{flex-shrink:0}
 .ai-hint{padding:0 20px 14px;display:block}
 .ai-tab-bar{padding:0 20px 14px}
 .ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
@@ -2823,7 +2826,7 @@ function renderAiAnalysisBody(){
         ${st.loading ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
       </div>
       <form class="ai-composer" data-form="ai-chat" autocomplete="off">
-        <input name="msg" placeholder="質問を入力（例：貯金を増やすには？）" autocomplete="off" ${st.loading ? 'disabled' : ''}>
+        <textarea name="msg" rows="1" placeholder="質問を入力（例：貯金を増やすには？）　Shift+Enterで改行" autocomplete="off" ${st.loading ? 'disabled' : ''}></textarea>
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
       <div class="hint ai-hint">※ イメージ確認用のダミー回答です。実装時は実際のAIが回答します。会話は自動的に保存され、直近20往復分のみ保持されます（古いやり取りは自動的に削除されます）。</div>
@@ -2848,7 +2851,7 @@ function renderAiLedgerBody(){
         ${aiPendingCard(st.pending)}
       </div>
       <form class="ai-composer" data-form="ai-ledger-chat" autocomplete="off">
-        <input name="msg" placeholder="例：食費 500円" autocomplete="off" ${st.loading || !writable ? 'disabled' : ''}>
+        <textarea name="msg" rows="1" placeholder="例：食費 500円　Shift+Enterで改行" autocomplete="off" ${st.loading || !writable ? 'disabled' : ''}></textarea>
         <button type="submit" class="btn primary" ${st.loading || !writable ? 'disabled' : ''}>送信</button>
       </form>
       <div class="hint ai-hint">※ イメージ確認用の簡易解析です。実装時は実際のAIが解釈します。実際の記録はこの画面で確認してから行われます。</div>
@@ -3675,6 +3678,12 @@ async function toggleSplit(guid){
   render();
 }
 main.addEventListener('keydown', e => {
+  // AIアシスタントの入力欄：Enterで送信、Shift+Enterで改行（textareaの既定どおり）
+  if (e.target.matches('.ai-composer textarea') && e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    e.target.form.requestSubmit();
+    return;
+  }
   if (e.target.id === 'statsAcctInput' && e.key === 'Enter') { e.preventDefault(); addStatsAccount(); return; }
   const row = e.target.closest('[data-edit], [data-redit]');
   if (row && e.key === 'Enter') { row.click(); return; }
@@ -3703,6 +3712,12 @@ main.addEventListener('reset', e => setTimeout(() => {
   e.target.querySelector('[data-msg]').textContent = '';
 }));
 main.addEventListener('input', e => {
+  // AIアシスタントの入力欄：複数行になったら高さを自動で伸ばす（max-heightまでは textarea 側のCSSで制御）
+  if (e.target.matches('.ai-composer textarea')) {
+    e.target.style.height = 'auto';
+    e.target.style.height = e.target.scrollHeight + 'px';
+    return;
+  }
   if (e.target.id === 'regQ') {
     if (e.isComposing) return;   // IME変換中は確定するまで更新しない（変換中に検索欄を作り直すとハングすることがある）
     state.q = e.target.value; state.limit = PAGE;
