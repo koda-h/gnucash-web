@@ -19,10 +19,13 @@ AI分析機能（画面の「AI分析」）を使うには GNUCASH_AI_API_KEY（
 スキーマは docs/gnucash-db-schema.md を参照。
 """
 import argparse
+import hashlib
+import hmac
 import ipaddress
 import json
 import os
 import re
+import secrets
 import shutil
 import signal
 import sqlite3
@@ -138,6 +141,8 @@ class Book:
         self._mf_lock = threading.Lock()
         self._settings_lock = threading.Lock()
         self._conversation_lock = threading.Lock()
+        self._mcp_lock = threading.Lock()
+        self._mcp_keys_lock = threading.Lock()
 
     def connect(self):
         if self.writable:
@@ -1002,7 +1007,7 @@ class Book:
     # GnuCash の SQLite とは別に、同じフォルダの app-settings.json に保存する
     # （mf-import.json・auth.json と同じ置き場所の流儀。会計データのスキーマには触れない）
 
-    DEFAULT_SETTINGS = {"aiIncludeTxDetails": False}
+    DEFAULT_SETTINGS = {"aiIncludeTxDetails": False, "mcpEnabled": False}
 
     def _settings_path(self):
         return Path(self.path).parent / "app-settings.json"
@@ -1015,7 +1020,8 @@ class Book:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return dict(self.DEFAULT_SETTINGS)
-        return {"aiIncludeTxDetails": bool(data.get("aiIncludeTxDetails", False))}
+        return {"aiIncludeTxDetails": bool(data.get("aiIncludeTxDetails", False)),
+                "mcpEnabled": bool(data.get("mcpEnabled", False))}
 
     def _save_settings(self, data):
         p = self._settings_path()
@@ -1037,6 +1043,8 @@ class Book:
             d = self._load_settings()
             if "aiIncludeTxDetails" in patch:
                 d["aiIncludeTxDetails"] = bool(patch["aiIncludeTxDetails"])
+            if "mcpEnabled" in patch:
+                d["mcpEnabled"] = bool(patch["mcpEnabled"])
             self._save_settings(d)
             return d
 
@@ -1103,6 +1111,183 @@ class Book:
             if p.exists():
                 p.unlink()
         return {"ok": True}
+
+    # ---- MCP連携：科目名ヒント→勘定科目の解決、および確認結果の記憶
+    # AIエージェント（MCPサーバー経由）が「食費」のような曖昧な文字列で科目を指定してきたとき、
+    # 完全一致・一意な末尾一致ならそのまま解決する。それ以外は候補一覧を返して確認を求め、
+    # 確認結果を mcp-mappings.json（mf-import.json 等と同じ置き場所）に保存して、
+    # 次回から同じ文字列をそのまま解決できるようにする
+
+    def _mcp_mappings_path(self):
+        return Path(self.path).parent / "mcp-mappings.json"
+
+    def _load_mcp_mappings(self):
+        p = self._mcp_mappings_path()
+        if not p.exists():
+            return {}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _save_mcp_mappings(self, data):
+        p = self._mcp_mappings_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+
+    # 残高を画面上「正の値」で見せるために符号を反転する科目種別（index.html の TYPES の credit と同じ）。
+    # これらの科目を amount の起点（account）にして取引を作るときは、金額の符号も反転させる必要がある
+    CREDIT_TYPES = {"CREDIT", "LIABILITY", "PAYABLE", "INCOME", "EQUITY"}
+
+    def _account_candidates(self, con):
+        """集計用（プレースホルダー）を除いた科目一覧を {guid, name（末端名）, full（フルパス）, type} で返す。
+        book() の walk() と同じく ROOT 配下だけを辿る（テンプレート用の木は含めない）"""
+        root = con.execute("select root_account_guid from books").fetchone()[0]
+        rows = con.execute("select guid, name, parent_guid, placeholder, account_type from accounts").fetchall()
+        ph_slots = {r[0] for r in con.execute(
+            "select obj_guid from slots where name='placeholder' and string_val='true'")}
+        by_parent = {}
+        for r in rows:
+            by_parent.setdefault(r["parent_guid"], []).append(r)
+        out = []
+
+        def walk(parent, path):
+            for r in by_parent.get(parent, []):
+                full = path + [r["name"]]
+                if not (bool(r["placeholder"]) or r["guid"] in ph_slots):
+                    out.append({"guid": r["guid"], "name": r["name"], "full": ":".join(full),
+                                 "type": r["account_type"]})
+                walk(r["guid"], full)
+
+        walk(root, [])
+        return out
+
+    def resolve_account(self, query):
+        """MCP向け：科目名のヒント文字列を勘定科目に解決する。
+        学習済みマッピング → フルパス完全一致 → 末端名／末尾の一意一致、の順に試す。
+        解決できなければ候補一覧（0件 or 複数件）を返す"""
+        q = (query or "").strip()
+        if not q:
+            raise ApiError(400, "query が必要です")
+        with self.connect() as con:
+            candidates = self._account_candidates(con)
+        with self._mcp_lock:
+            learned = self._load_mcp_mappings().get(q)
+        def resolved(c, source):
+            return {"status": "resolved", "source": source, "guid": c["guid"], "name": c["full"],
+                    "type": c["type"], "credit": c["type"] in self.CREDIT_TYPES}
+
+        if learned:
+            hit = next((c for c in candidates if c["guid"] == learned), None)
+            if hit:
+                return resolved(hit, "learned")
+        exact = [c for c in candidates if c["full"] == q]
+        if len(exact) == 1:
+            return resolved(exact[0], "exact")
+        matches = [c for c in candidates if c["name"] == q or c["full"].endswith(":" + q)]
+        if len(matches) == 1:
+            return resolved(matches[0], "unique")
+        pool = matches or [c for c in candidates if q in c["full"]]
+        return {"status": "ambiguous" if pool else "none",
+                "candidates": [{"guid": c["guid"], "name": c["full"], "type": c["type"]} for c in pool[:20]]}
+
+    def set_mcp_mapping(self, query, account_guid):
+        q = (query or "").strip()
+        if not q:
+            raise ApiError(400, "query が必要です")
+        with self.connect() as con:
+            a = self._account(con, account_guid)
+            if a["placeholder"]:
+                raise ApiError(400, f"集計用（プレースホルダ）の科目「{a['name']}」は選べません")
+            full = next((c["full"] for c in self._account_candidates(con) if c["guid"] == account_guid), a["name"])
+        with self._mcp_lock:
+            d = self._load_mcp_mappings()
+            d[q] = account_guid
+            self._save_mcp_mappings(d)
+        return {"ok": True, "guid": account_guid, "name": full}
+
+    def delete_mcp_mapping(self, query):
+        q = (query or "").strip()
+        if not q:
+            raise ApiError(400, "query が必要です")
+        with self._mcp_lock:
+            d = self._load_mcp_mappings()
+            d.pop(q, None)
+            self._save_mcp_mappings(d)
+        return {"ok": True}
+
+    # ---- MCP連携：APIキーの発行・一覧・失効
+    # 設定画面で発行する。生のキーは発行時のレスポンスで一度だけ返し、保存するのはソルト付きハッシュのみ
+    # （mcp-keys.json、data/ 配下、Git には入らない）。万一このファイルが漏れてもキー自体は使えない
+
+    def _mcp_keys_path(self):
+        return Path(self.path).parent / "mcp-keys.json"
+
+    def _load_mcp_keys(self):
+        p = self._mcp_keys_path()
+        if not p.exists():
+            return []
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return data if isinstance(data, list) else []
+
+    def _save_mcp_keys(self, keys):
+        p = self._mcp_keys_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(keys, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(p)
+
+    @staticmethod
+    def _hash_mcp_key(token, salt):
+        return hashlib.sha256((salt + token).encode()).hexdigest()
+
+    def list_mcp_keys(self):
+        with self._mcp_keys_lock:
+            keys = self._load_mcp_keys()
+        return {"keys": [{"id": k["id"], "label": k.get("label", ""),
+                           "createdAt": k["createdAt"], "lastUsedAt": k.get("lastUsedAt")} for k in keys]}
+
+    def create_mcp_key(self, label):
+        token = secrets.token_urlsafe(32)
+        salt = secrets.token_hex(16)
+        rec = {"id": new_guid(), "label": str(label or "").strip()[:100], "salt": salt,
+               "hash": self._hash_mcp_key(token, salt),
+               "createdAt": datetime.now(timezone.utc).isoformat(), "lastUsedAt": None}
+        with self._mcp_keys_lock:
+            keys = self._load_mcp_keys()
+            keys.append(rec)
+            self._save_mcp_keys(keys)
+        # key は発行直後のこのレスポンスでしか返らない（以降は保存されたハッシュとしか照合できない）
+        return {"id": rec["id"], "label": rec["label"], "createdAt": rec["createdAt"], "key": token}
+
+    def delete_mcp_key(self, key_id):
+        with self._mcp_keys_lock:
+            keys = self._load_mcp_keys()
+            kept = [k for k in keys if k["id"] != key_id]
+            self._save_mcp_keys(kept)
+        return {"ok": True}
+
+    def check_mcp_key(self, token):
+        """Bearer トークンをハッシュ化して保存済みのキーと照合する。一致すれば lastUsedAt を更新する。
+        設定で mcpEnabled がオフのときは（キーが残っていても）常に失敗させる"""
+        with self._settings_lock:
+            mcp_enabled = self._load_settings().get("mcpEnabled")
+        if not token or not mcp_enabled:
+            return False
+        with self._mcp_keys_lock:
+            keys = self._load_mcp_keys()
+            for k in keys:
+                if hmac.compare_digest(self._hash_mcp_key(token, k["salt"]), k["hash"]):
+                    k["lastUsedAt"] = datetime.now(timezone.utc).isoformat()
+                    self._save_mcp_keys(keys)
+                    return True
+        return False
 
 
 # ---------------------------------------------------------------- HTTP
@@ -1267,6 +1452,16 @@ class Handler(BaseHTTPRequestHandler):
             emit({"type": "text_delta", "text": note})
         emit({"type": "done", "content": content, "stopReason": stop_reason})
 
+    def _api_key_authed(self):
+        """MCPサーバーなど、ブラウザを介さないクライアント向けの認証。
+        設定画面で発行した Authorization: Bearer <key> が一致すればOK。
+        パスキー認証（GNUCASH_AUTH）の有無に関わらず使える（キーが1つもない・mcpEnabledがオフなら常にFalse）。"""
+        given = self.headers.get("Authorization", "")
+        prefix = "Bearer "
+        if not given.startswith(prefix):
+            return False
+        return self.book.check_mcp_key(given[len(prefix):])
+
     def _route(self, method):
         url = urlparse(self.path)
         p, qs = url.path, parse_qs(url.query)
@@ -1276,9 +1471,12 @@ class Handler(BaseHTTPRequestHandler):
             # /recent・/report・/<勘定科目の guid> など、フロント側のクライアントサイドルーティングが
             # 扱うパスはすべてここで index.html を返す（SPA のキャッチオール。直接アクセス・リロード対応）
             return self._send(200, (STATIC_DIR / "index.html").read_bytes(), "text/html; charset=utf-8")
+        api_keyed = p.startswith("/api/") and self._api_key_authed()
         if self.auth:
-            authed = self.auth.is_authenticated(self.headers.get("Cookie"))
-            if method != "GET" and not self.auth.check_origin(self.headers.get("Origin"), self.headers.get("Referer")):
+            authed = api_keyed or self.auth.is_authenticated(self.headers.get("Cookie"))
+            # Bearer トークンはブラウザが自動付与するものではないので CSRF（Origin チェック）の対象外
+            if not api_keyed and method != "GET" \
+                    and not self.auth.check_origin(self.headers.get("Origin"), self.headers.get("Referer")):
                 raise ApiError(403, "別のサイトからの操作は受け付けません")
             if p.startswith("/api/auth/"):
                 return self._route_auth(method, p, authed)
@@ -1354,6 +1552,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, b.mf_import_ids())
         if method == "POST" and p == "/api/mf-import/commit":
             return self._send(201, b.mf_import_commit(self._body().get("items")))
+        if method == "GET" and p == "/api/mcp/resolve-account":
+            return self._send(200, b.resolve_account(qs.get("q", [""])[0]))
+        if method == "POST" and p == "/api/mcp/mappings":
+            body = self._body()
+            return self._send(200, b.set_mcp_mapping(body.get("query"), body.get("account")))
+        if method == "DELETE" and p == "/api/mcp/mappings":
+            body = self._body()
+            return self._send(200, b.delete_mcp_mapping(body.get("query")))
+        if method == "GET" and p == "/api/mcp/keys":
+            return self._send(200, b.list_mcp_keys())
+        if method == "POST" and p == "/api/mcp/keys":
+            return self._send(201, b.create_mcp_key(self._body().get("label")))
+        m = re.fullmatch(r"/api/mcp/keys/([0-9a-f]{32})", p)
+        if method == "DELETE" and m:
+            return self._send(200, b.delete_mcp_key(m[1]))
         if method == "POST" and p == "/api/transactions":
             return self._send(201, b.create(self._body()))
         m = re.fullmatch(r"/api/transactions/([0-9a-f]{32})/copy", p)

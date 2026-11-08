@@ -143,6 +143,35 @@ GnuCash ファイルそのものや個々の取引明細は送信しない。送
 
 質問・回答のたびに Anthropic API の利用料金が発生する（サーバー側に設定した `GNUCASH_AI_API_KEY` に課金される）。
 
+## MCP連携（AIエージェントから取引を記録する）
+
+`mcp-server/server.py` を使うと、Claude Desktop・Claude Code などの MCP クライアントから「食費 500円」のような指示で GnuCash Web に取引を追加できる。GnuCash Web 本体とは別プロセスで動く、標準ライブラリのみの MCP サーバー（stdio）。
+
+### 有効にする
+
+1. 画面右下の「設定」→「MCP連携」の「AIエージェントからの取引追加を許可する」をオンにする
+2. 表示された「発行」でAPIキーを作る（名前は任意。例: `Claude Desktop`）。**キーはこのとき一度だけ表示される**ので控えておく
+3. MCP クライアントの設定に `mcp-server/server.py` を登録する（Claude Code の場合の例）
+
+   ```bash
+   claude mcp add gnucash-web \
+     --env GNUCASH_WEB_URL=http://127.0.0.1:8000 \
+     --env GNUCASH_API_KEY=発行したキー \
+     -- python3 /path/to/gnucash-web/mcp-server/server.py
+   ```
+
+| 環境変数（MCPサーバー側） | 内容 |
+|---|---|
+| `GNUCASH_WEB_URL` | GnuCash Web のURL（必須。例 `http://127.0.0.1:8000`） |
+| `GNUCASH_API_KEY` | 設定画面で発行したAPIキー（必須） |
+| `GNUCASH_MCP_DEFAULT_PAYMENT_ACCOUNT` | 支払い元・入金先を省略したときに使う科目のヒント（例 `現金`。省略可） |
+
+キーは複数発行でき、使っているMCPサーバーごとに分けておくと、不要になったものだけ設定画面から個別に失効できる。生のキーはサーバーに保存されず（ソルト付きハッシュのみ保存）、発行直後の画面以外では二度と表示されない。「AIエージェントからの取引追加を許可する」をオフにすると、発行済みのキーを残したまま一時的に無効化できる。
+
+### 科目名の解決と学習
+
+「食費」のような文字列から勘定科目を一意に特定できない（同名科目が複数ある・該当がない）場合は取引を作らず、候補一覧をエージェント経由でユーザーに確認する。確認した対応は `mcp-mappings.json`（`data/` 配下、Git には入らない）に保存され、次回から同じ文字列をそのまま自動解決できる。
+
 ## 構成
 
 | ファイル | 内容 |
@@ -150,6 +179,7 @@ GnuCash ファイルそのものや個々の取引明細は送信しない。送
 | `server.py` | HTTP サーバ + SQLite アクセス（API） |
 | `auth.py` | パスキー（WebAuthn）認証。`GNUCASH_AUTH=1` のときだけ読み込まれる |
 | `static/index.html` | 画面（勘定科目ツリー・登録簿・入力フォーム） |
+| `mcp-server/server.py` | MCPサーバー（別プロセス）。AIエージェントから取引を追加する |
 
 ## 画面
 
@@ -174,6 +204,12 @@ GnuCash ファイルそのものや個々の取引明細は送信しない。送
 | POST | `/api/transactions/{guid}/copy` | 取引の複製 `{date}`（省略時は本日）。全 split・メモ・処理・備考を写し、番号・照合状態・ロットは引き継がない |
 | DELETE | `/api/transactions/{guid}` | 取引の削除。戻り値の `snapshot` で元に戻せる |
 | POST | `/api/transactions/restore` | 削除した取引の復元 |
+| GET | `/api/mcp/resolve-account?q=` | MCP連携用：科目名のヒントを勘定科目に解決する（学習済みマッピング→完全一致→一意一致の順）。曖昧なら候補一覧を返す |
+| POST | `/api/mcp/mappings` | MCP連携用：`{query, account}` の対応を記憶する（確認後の学習） |
+| DELETE | `/api/mcp/mappings` | MCP連携用：`{query}` の対応を削除する |
+| GET | `/api/mcp/keys` | MCP連携用APIキーの一覧（ハッシュ・生のキーは含まない） |
+| POST | `/api/mcp/keys` | APIキーを発行する `{label}`。生のキーはこのレスポンスでのみ返る |
+| DELETE | `/api/mcp/keys/{id}` | APIキーを失効させる |
 
 ## 書き込み時の仕様（GnuCash 本体に合わせている点）
 
