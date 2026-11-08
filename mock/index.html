@@ -3498,6 +3498,7 @@ main.addEventListener('input', e => {
 // その場合 input イベント側の isComposing ガードだけでは確定後の検索が走らないため、
 // compositionend でも確実に検索を走らせる（input 側と二重に呼ばれても実害はない）
 main.addEventListener('compositionend', e => {
+  if (e.target.id === 'regQ') { state.q = e.target.value; state.limit = PAGE; refilterList(); return; }
   if (e.target.id === 'searchQ') queueSearch(e.target.value);
 });
 main.addEventListener('change', e => {
