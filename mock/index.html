@@ -4115,27 +4115,26 @@ function syncAppHeight(){
   document.documentElement.style.setProperty('--app-h', h + 'px');
   app.style.top = (vv ? vv.offsetTop : 0) + 'px';
 }
+// キーボードの開閉アニメーション中は visualViewport の resize/scroll が途中の値で
+// 何度も発火し、そのたびに即座に反映すると、一瞬おかしな位置（例えば画面の一番上）
+// に動いてから正しい位置に戻るというガクついた動きになってしまう。そのため、
+// イベントが落ち着いてから一定時間後に一度だけ反映する（デバウンス）。
+// フォーカスの変化（開閉どちらも）でも同様に、アニメーションが収まった頃合いで
+// 念のため再同期する
+let syncAppHeightTimer = null;
+function scheduleSyncAppHeight(delay){
+  clearTimeout(syncAppHeightTimer);
+  syncAppHeightTimer = setTimeout(syncAppHeight, delay);
+}
 if (window.visualViewport) {
-  visualViewport.addEventListener('resize', syncAppHeight);
-  visualViewport.addEventListener('scroll', syncAppHeight);
+  visualViewport.addEventListener('resize', () => scheduleSyncAppHeight(120));
+  visualViewport.addEventListener('scroll', () => scheduleSyncAppHeight(120));
 } else {
-  window.addEventListener('resize', syncAppHeight);
+  window.addEventListener('resize', () => scheduleSyncAppHeight(120));
 }
+document.addEventListener('focusin', () => scheduleSyncAppHeight(350), true);
+document.addEventListener('focusout', () => scheduleSyncAppHeight(350), true);
 syncAppHeight();
-// ソフトキーボードの開閉アニメーション中は visualViewport の resize/scroll が
-// 途中の値で何度も発火し、アニメーションが収まったあとの最終的な値のイベントが
-// 発火しないことがある（特に、一度閉じてから再度フォーカスし直した場合）。
-// それにより高さ・表示位置がアニメーション途中の値のまま固定されてしまうのを防ぐため、
-// 入力欄のフォーカスが変化するたびに、アニメーションが収まるであろう時間の間
-// 繰り返し再同期する
-let appHeightResyncTimer = null;
-function resyncAppHeightAfterFocusChange(){
-  if (appHeightResyncTimer) clearInterval(appHeightResyncTimer);
-  appHeightResyncTimer = setInterval(syncAppHeight, 100);
-  setTimeout(() => { clearInterval(appHeightResyncTimer); appHeightResyncTimer = null; }, 1000);
-}
-document.addEventListener('focusin', resyncAppHeightAfterFocusChange, true);
-document.addEventListener('focusout', resyncAppHeightAfterFocusChange, true);
 </script>
 </body>
 </html>
