@@ -65,7 +65,7 @@ button,input{font:inherit;color:inherit}
 input{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
-.app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
+.app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
 
 /* ---------- Sidebar ---------- */
 .sidebar{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
@@ -4018,10 +4018,16 @@ window.addEventListener('popstate', () => { if (state.book) syncViewFromLocation
 
 // スマホでソフトキーボードが開くと、レイアウト上の高さ（dvh）はキーボード分だけ縮まない
 // ブラウザがあるため、.app の高さを固定のままにしておくと入力欄下部のボタン等が
-// キーボードの裏に隠れてしまう。visualViewport の実際の表示高さを追従させて解決する。
+// キーボードの裏に隠れてしまう。さらに iOS Safari は、フォーカスした入力欄を見せる際に
+// window.scrollY ではなく visualViewport（実際に見えている領域）だけを layout viewport
+// に対して上下にずらす（visualViewport.offsetTop）ため、.app の高さだけ追従させても
+// ズレが残る。.app を position:fixed にして、高さだけでなく表示位置（top）も
+// visualViewport に合わせて追従させることで解決する。
 function syncAppHeight(){
-  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-h', h + 'px');
+  app.style.top = (vv ? vv.offsetTop : 0) + 'px';
 }
 if (window.visualViewport) {
   visualViewport.addEventListener('resize', syncAppHeight);
