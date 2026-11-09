@@ -4028,6 +4028,7 @@ function syncAppHeight(){
   const h = vv ? vv.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-h', h + 'px');
   app.style.top = (vv ? vv.offsetTop : 0) + 'px';
+  logVvDebug();
 }
 if (window.visualViewport) {
   visualViewport.addEventListener('resize', syncAppHeight);
@@ -4051,29 +4052,39 @@ function resyncAppHeightAfterFocusChange(){
 document.addEventListener('focusin', resyncAppHeightAfterFocusChange, true);
 document.addEventListener('focusout', resyncAppHeightAfterFocusChange, true);
 
-// DEBUG（一時的）：実機の visualViewport の値を直接確認するための常時表示オーバーレイ。
-// 原因調査用で、原因が特定でき次第この節は削除する
-(function(){
-  const dbg = document.createElement('div');
-  dbg.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:rgba(220,0,0,.9);color:#fff;'
-    + 'font:10px/1.4 monospace;padding:4px 6px;pointer-events:none;white-space:pre';
-  document.body.appendChild(dbg);
-  function upd(){
+// DEBUG（一時的）：画面上に常時表示するオーバーレイは、ソフトキーボード表示中は
+// 実機で潰れて読めなくなることが分かったため、代わりに visualViewport の値の推移を
+// localStorage に記録しておき、あとから ?vvlog を付けて開くとテキストとして
+// 確認できるようにする。原因特定後にこの節は削除する
+const VV_LOG_KEY = 'vvDebugLog';
+function logVvDebug(){
+  try {
     const vv = window.visualViewport;
-    dbg.textContent = (vv
-      ? `vv h=${Math.round(vv.height)} w=${Math.round(vv.width)} top=${Math.round(vv.offsetTop)} left=${Math.round(vv.offsetLeft)} scale=${vv.scale.toFixed(2)}`
-      : 'no visualViewport')
-      + `\nwin h=${window.innerHeight} scrollY=${window.scrollY}`
-      + `\napp-h=${document.documentElement.style.getPropertyValue('--app-h')} app.top=${app.style.top}`
-      + `\nappRect=${JSON.stringify(app.getBoundingClientRect())}`;
-  }
-  if (window.visualViewport) {
-    visualViewport.addEventListener('resize', upd);
-    visualViewport.addEventListener('scroll', upd);
-  }
-  setInterval(upd, 200);
-  upd();
-})();
+    const r = app.getBoundingClientRect();
+    const entry = {
+      t: new Date().toISOString().slice(11, 23),
+      vvH: vv ? Math.round(vv.height) : null,
+      vvW: vv ? Math.round(vv.width) : null,
+      vvTop: vv ? Math.round(vv.offsetTop) : null,
+      vvScale: vv ? +vv.scale.toFixed(2) : null,
+      winH: window.innerHeight,
+      scrollY: window.scrollY,
+      appH: document.documentElement.style.getPropertyValue('--app-h'),
+      appTop: app.style.top,
+      rectTop: Math.round(r.top), rectH: Math.round(r.height),
+      active: document.activeElement ? document.activeElement.tagName : null,
+    };
+    const arr = JSON.parse(localStorage.getItem(VV_LOG_KEY) || '[]');
+    arr.push(entry);
+    while (arr.length > 80) arr.shift();
+    localStorage.setItem(VV_LOG_KEY, JSON.stringify(arr));
+  } catch (e) {}
+}
+if (location.search.includes('vvlog')) {
+  const lines = JSON.parse(localStorage.getItem(VV_LOG_KEY) || '[]').map(e => JSON.stringify(e));
+  document.body.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;font:12px/1.6 monospace;'
+    + 'padding:12px;color:#0f0;background:#000;margin:0">' + (lines.join('\n') || '(ログがありません)') + '</pre>';
+}
 </script>
 </body>
 </html>
