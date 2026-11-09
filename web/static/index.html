@@ -588,6 +588,17 @@ form.busy{opacity:.6;pointer-events:none}
 @media (max-width: 820px){ .ai-composer textarea{min-height:60px} }
 .ai-composer input:focus,.ai-composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .ai-composer button{flex-shrink:0}
+/* 記帳タブ：レシート画像添付（.ai-composer-wrap で囲い、枠線はラッパー側に持たせて
+   プレビュー行をフォームの上・枠線の内側に挟めるようにする） */
+.ai-composer-wrap{border-top:1px solid var(--border-strong)}
+.ai-composer-wrap .ai-composer{border-top:0}
+.ai-attach-btn{height:36px;width:36px;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer;padding:0}
+.ai-attach-btn:hover{background:var(--hover)}
+.ai-image-chip{display:flex;align-items:center;gap:10px;padding:10px 20px 0}
+.ai-image-chip img{width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid var(--border);flex-shrink:0}
+.ai-image-chip .name{font-size:12px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-image-chip button{border:0;background:var(--surface-2);color:var(--muted);width:22px;height:22px;border-radius:50%;display:grid;place-items:center;cursor:pointer;flex-shrink:0}
+.ai-msg-image{display:block;max-width:220px;max-height:220px;border-radius:8px;margin-bottom:6px}
 .ai-hint{padding:0 20px 14px;display:block}
 .ai-tab-bar{padding:0 20px 14px}
 .ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
@@ -2287,7 +2298,7 @@ function openAi(){
     loadAiConversation();   // 初回だけ、保存済みの会話があれば非同期で読み込んで差し替える
   }
   if (!state.aiLedger) {
-    state.aiLedger = {messages: [], loading: false, streamText: null, pending: null};
+    state.aiLedger = {messages: [], loading: false, streamText: null, pending: null, pendingImage: null};
     loadAiLedgerConversation();
   }
   app.classList.add('show-main');
@@ -2579,6 +2590,7 @@ async function sendAiMessage(form){
 const AI_LEDGER_SYSTEM_PROMPT = [
   'あなたは家計管理アプリ「GnuCash Web」に組み込まれた記帳アシスタントです。',
   'ユーザーの指示（例：「食費 500円」「給与 300000円 普通預金」）をもとに add_transaction ツールを呼び出して取引を記録してください。',
+  'ユーザーはレシートや領収書の画像を送ることがあります。その場合は画像から日付・合計金額・店名や購入内容を読み取り、店名や購入内容から category（勘定科目のヒント）を推測して add_transaction を呼び出してください。日付が読み取れない場合は省略してください（今日の日付になります）。支払い方法（現金・カード等）が画像からもテキストからも分からない場合は payment_account を省略し、ユーザーに確認してください。',
   '科目名が曖昧な場合はツールの結果に候補が示されるので、ユーザーに確認してから confirmed_category／confirmed_payment_account を指定して再度呼び出してください。',
   '金額・支払い元（入金先）が分からない場合は、ツールを呼ばずにユーザーに質問してください。',
   '重要：add_transaction を呼んでも、その場で実際に記帳されるわけではありません。ユーザーが画面の確認ボタンを押すまでは記録されないので、ツールの結果を踏まえて「この内容でよろしいですか？」のように確認を促す返答をしてください。',
@@ -2649,10 +2661,14 @@ function aiPendingCard(p){
       </div>
     </div>`;
 }
-async function sendAiLedgerText(text){
+async function sendAiLedgerText(text, image){
   const st = state.aiLedger;
-  if (!text || st.loading) return;
-  st.messages.push({role: 'user', content: text});
+  if ((!text && !image) || st.loading) return;
+  const content = image
+    ? [{type: 'image', source: {type: 'base64', media_type: image.mediaType, data: image.base64}},
+       {type: 'text', text: text || 'このレシート画像の内容から取引を記録してください。'}]
+    : text;
+  st.messages.push({role: 'user', content});
   st.loading = true;
   st.pending = null;
   render({scrollBottom: true});
@@ -2668,11 +2684,41 @@ async function sendAiLedgerText(text){
   await saveAiLedgerConversation(st);
 }
 async function sendAiLedgerMessage(form){
+  const st = state.aiLedger;
   const input = form.elements.msg;
   const text = input.value.trim();
-  if (!text) return;
+  const image = st.pendingImage;
+  if (!text && !image) return;
   input.value = '';
-  await sendAiLedgerText(text);
+  st.pendingImage = null;
+  await sendAiLedgerText(text, image);
+}
+// レシート画像添付：選んだファイルを最大1600pxに縮小してJPEGに変換し、送信前のプレビューとして保持する
+// （スマホのカメラ写真は数MBになりがちなので、送信前に軽量化してAPIコスト・通信量を抑える）
+const AI_IMAGE_MAX_DIM = 1600;
+function pickAiLedgerImage(){
+  document.getElementById('aiLedgerImageInput')?.click();
+}
+async function handleAiLedgerImageFile(file){
+  if (!file.type.startsWith('image/')) { toast('画像ファイルを選択してください'); return; }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, AI_IMAGE_MAX_DIM / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    bitmap.close?.();
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    state.aiLedger.pendingImage = {dataUrl, base64: dataUrl.split(',')[1], mediaType: 'image/jpeg'};
+    render();
+  } catch (e) {
+    toast('画像の読み込みに失敗しました');
+  }
+}
+function removeAiLedgerImage(){
+  state.aiLedger.pendingImage = null;
+  render();
 }
 async function confirmAiPending(){
   const st = state.aiLedger, p = st.pending;
@@ -2745,7 +2791,17 @@ function renderMarkdown(text){
   return html;
 }
 function aiBubble(m){
-  if (Array.isArray(m.content)) return '';   // ツール呼び出し・結果のやり取りは表示しない
+  if (Array.isArray(m.content)) {
+    // tool_use／tool_result のやり取りは表示しない。レシート添付（image + text）のユーザー
+    // メッセージだけは、添付した画像とテキストを吹き出しとして表示する
+    if (m.content.some(b => b.type === 'tool_use' || b.type === 'tool_result')) return '';
+    const img = m.content.find(b => b.type === 'image');
+    const text = m.content.find(b => b.type === 'text');
+    if (!img) return '';
+    const imgHtml = `<img class="ai-msg-image" src="data:${img.source.media_type};base64,${img.source.data}" alt="">`;
+    const body = text?.text ? esc(text.text).replace(/\n/g, '<br>') : '';
+    return `<div class="ai-msg ${m.role}${m.error ? ' error' : ''}">${imgHtml}${body}</div>`;
+  }
   const body = m.role === 'assistant' ? renderMarkdown(m.content) : esc(m.content).replace(/\n/g, '<br>');
   return `<div class="ai-msg ${m.role}${m.error ? ' error' : ''}">${body}</div>`;
 }
@@ -2806,26 +2862,38 @@ function renderAiAnalysisBody(){
 function renderAiLedgerBody(){
   const st = state.aiLedger;
   const writable = canWrite();
+  const img = st.pendingImage;
+  const dis = st.loading || !writable;
   return `
     <div class="card ai-card">
       <div class="ai-period-bar">
-        <div class="ai-note" style="margin:0">「食費 500円」のように話しかけると、科目を確認のうえ取引を記録します。</div>
+        <div class="ai-note" style="margin:0">「食費 500円」のように話しかけるか、レシート画像を添付すると、科目を確認のうえ取引を記録します。</div>
         ${st.messages.length ? '<button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>' : ''}
       </div>
       <div class="scroll ai-scroll" id="scroll" data-account="__ailedger">
         ${!writable ? `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため記帳できません' : 'GnuCash デスクトップのロック中のため記帳できません'}</div>` : ''}
         ${st.messages.length ? st.messages.map(aiBubble).join('') : `
           <div class="ai-empty">
-            <div class="ai-note">例：「食費 500円」「給与 300000円 普通預金」のように話しかけてください。科目が曖昧な場合は確認します。実際の記録前に必ず確認画面が表示されます。</div>
+            <div class="ai-note">例：「食費 500円」「給与 300000円 普通預金」のように話しかけてください。レシート画像を添付して読み取らせることもできます。科目が曖昧な場合は確認します。実際の記録前に必ず確認画面が表示されます。</div>
           </div>`}
         ${st.streamText != null ? `<div class="ai-msg assistant raw" id="aiStreamBubble">${esc(st.streamText)}</div>` : ''}
         ${st.loading && st.streamText == null ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
         ${aiPendingCard(st.pending)}
       </div>
-      <form class="ai-composer" data-form="ai-ledger-chat" autocomplete="off">
-        <textarea name="msg" rows="1" placeholder="例：食費 500円　Shift+Enterで改行" autocomplete="off" ${st.loading || !writable ? 'disabled' : ''}></textarea>
-        <button type="submit" class="btn primary" ${st.loading || !writable ? 'disabled' : ''}>送信</button>
-      </form>
+      <div class="ai-composer-wrap">
+        ${img ? `
+          <div class="ai-image-chip">
+            <img src="${img.dataUrl}" alt="">
+            <div class="name">レシート画像を添付しました</div>
+            <button type="button" data-ai-image-remove title="画像を削除" aria-label="画像を削除"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+          </div>` : ''}
+        <form class="ai-composer" data-form="ai-ledger-chat" autocomplete="off">
+          <input type="file" id="aiLedgerImageInput" accept="image/*" hidden ${dis ? 'disabled' : ''}>
+          <button type="button" class="ai-attach-btn" data-ai-image-pick title="レシート画像を添付" aria-label="レシート画像を添付" ${dis ? 'disabled' : ''}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+          <textarea name="msg" rows="1" placeholder="例：食費 500円　Shift+Enterで改行" autocomplete="off" ${dis ? 'disabled' : ''}></textarea>
+          <button type="submit" class="btn primary" ${dis ? 'disabled' : ''}>送信</button>
+        </form>
+      </div>
       <div class="hint ai-hint">※ 実際の記録はこの画面で確認してから行われます。会話は自動的に保存され、直近20往復分のみ保持されます。</div>
     </div>`;
 }
@@ -3512,6 +3580,8 @@ main.addEventListener('click', e => {
   if (t.closest('#aiOverview')) return askAiOverview();
   if (t.closest('#aiClear')) { clearAiConversation(); return; }
   if (t.closest('#aiLedgerClear')) { clearAiLedgerConversation(); return; }
+  if (t.closest('[data-ai-image-pick]')) return pickAiLedgerImage();
+  if (t.closest('[data-ai-image-remove]')) { removeAiLedgerImage(); return; }
   if (t.closest('#aiPendingConfirm')) return confirmAiPending();
   if (t.closest('#aiPendingCancel')) { cancelAiPending(); return; }
   const aiTab = t.closest('[data-ai-tab]'); if (aiTab) { state.aiTab = aiTab.dataset.aiTab; render(); return; }
@@ -3684,6 +3754,12 @@ main.addEventListener('change', e => {
   if (e.target.id === 'reportFrom') { state.reportFrom = e.target.value; changeReportRange(); return; }
   if (e.target.id === 'reportTo') { state.reportTo = e.target.value; changeReportRange(); return; }
   if (e.target.id === 'impFile') { const f = e.target.files[0]; if (f) handleImportFile(f); return; }
+  if (e.target.id === 'aiLedgerImageInput') {
+    const f = e.target.files[0];
+    e.target.value = '';   // 同じファイルを選び直しても change が発火するようにリセットしておく
+    if (f) handleAiLedgerImageFile(f);
+    return;
+  }
   if (e.target.id === 'statsFrom') { state.stats.from = e.target.value || state.stats.from; loadStats(); return; }
   if (e.target.id === 'statsTo') { state.stats.to = e.target.value || state.stats.to; loadStats(); return; }
   if (e.target.id === 'themeSelect') return setTheme(e.target.value);
