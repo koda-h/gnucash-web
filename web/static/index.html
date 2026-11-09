@@ -65,7 +65,11 @@ button,input{font:inherit;color:inherit}
 input,textarea{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
-.app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
+/* height/top はソフトキーボードの開閉に合わせて JS で追従させている。
+   keyboard アニメーション中は visualViewport の resize/scroll が何度も発火し、
+   そのたびに値を更新するため、transition を付けないと入力欄が一旦ずれてから
+   正しい位置に飛ぶような、ガクつく動きに見えてしまう */
+.app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh);transition:height .22s ease,top .22s ease}
 
 /* ---------- Sidebar ---------- */
 .sidebar{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
