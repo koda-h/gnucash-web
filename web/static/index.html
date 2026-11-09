@@ -47,10 +47,17 @@
 /* hidden 属性は display を指定した要素でも必ず隠す */
 [hidden]{display:none !important}
 html,body{height:100%}
+/* body を position:fixed にして、ページ自体はスクロールできないようにする。
+   こうしないと、スマホでソフトキーボードが開いたときにブラウザが入力欄を
+   表示しようとページ全体をスクロールしてしまい、.app の高さを visualViewport
+   に追従させても（下記 syncAppHeight）ズレが残って内容がちぐはぐに欠けて見える。
+   画面内のスクロールはもともとすべて .scroll 等の内側の要素で行っているため、
+   ページ自体のスクロールは元々使っていない */
 body{
   margin:0; background:var(--bg); color:var(--text);
   font:14px/1.5 Inter,"Noto Sans JP",system-ui,-apple-system,"Hiragino Sans",sans-serif;
   -webkit-font-smoothing:antialiased;
+  position:fixed; inset:0; overflow:hidden;
 }
 button,input{font:inherit;color:inherit}
 /* iOS Safari は入力欄の font-size が 16px 未満だとフォーカス時に自動でページをズームする。
