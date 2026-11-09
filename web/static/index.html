@@ -66,10 +66,9 @@ input,textarea{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
 /* height/top はソフトキーボードの開閉に合わせて JS で追従させている。
-   keyboard アニメーション中は visualViewport の resize/scroll が何度も発火し、
-   そのたびに値を更新するため、transition を付けないと入力欄が一旦ずれてから
-   正しい位置に飛ぶような、ガクつく動きに見えてしまう */
-.app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh);transition:height .22s ease,top .22s ease}
+   ブラウザが visualViewport をずらす瞬間と、ここでの反映にタイムラグがあるほど
+   入力欄が一瞬おかしな位置に見えてしまうため、transition は付けず即座に反映する */
+.app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
 
 /* ---------- Sidebar ---------- */
 .sidebar{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
@@ -4064,25 +4063,22 @@ function syncAppHeight(){
   app.style.top = (vv ? vv.offsetTop : 0) + 'px';
   logVvDebug('apply');
 }
-// キーボードの開閉アニメーション中は visualViewport の resize/scroll が途中の値で
-// 何度も発火し、そのたびに即座に反映すると、一瞬おかしな位置（例えば画面の一番上）
-// に動いてから正しい位置に戻るというガクついた動きになってしまう。そのため、
-// イベントが落ち着いてから一定時間後に一度だけ反映する（デバウンス）。
-// フォーカスの変化（開閉どちらも）でも同様に、アニメーションが収まった頃合いで
-// 念のため再同期する
-let syncAppHeightTimer = null;
-function scheduleSyncAppHeight(delay){
-  clearTimeout(syncAppHeightTimer);
-  syncAppHeightTimer = setTimeout(syncAppHeight, delay);
-}
+// visualViewport が実際にずれる瞬間（キーボードの開閉でブラウザが visualViewport を
+// 動かす瞬間）と、こちら側の .app の表示位置・高さの更新が同じタイミングで起きないと、
+// その間の一瞬だけ入力欄が画面の一番上などおかしな位置に見えてしまう。そのため
+// resize/scroll イベントには遅延やアニメーションを挟まず、即座に反映する。
+// （以前 100ms間隔の再同期や transition、デバウンスを試したが、それらはいずれも
+// このズレの時間を長く・目立たせる方向に働いていたため廃止した）
 if (window.visualViewport) {
-  visualViewport.addEventListener('resize', () => { logVvDebug('resize'); scheduleSyncAppHeight(120); });
-  visualViewport.addEventListener('scroll', () => { logVvDebug('scroll'); scheduleSyncAppHeight(120); });
+  visualViewport.addEventListener('resize', () => { logVvDebug('resize'); syncAppHeight(); });
+  visualViewport.addEventListener('scroll', () => { logVvDebug('scroll'); syncAppHeight(); });
 } else {
-  window.addEventListener('resize', () => scheduleSyncAppHeight(120));
+  window.addEventListener('resize', syncAppHeight);
 }
-document.addEventListener('focusin', () => { logVvDebug('focusin'); scheduleSyncAppHeight(350); }, true);
-document.addEventListener('focusout', () => { logVvDebug('focusout'); scheduleSyncAppHeight(350); }, true);
+// visualViewport のイベントが発火しない場合の保険として、フォーカス変化後にも
+// 少し遅らせて確認する（こちらは遅延があっても実害が小さいケースの保険のみ）
+document.addEventListener('focusin', () => { logVvDebug('focusin'); setTimeout(syncAppHeight, 350); }, true);
+document.addEventListener('focusout', () => { logVvDebug('focusout'); setTimeout(syncAppHeight, 350); }, true);
 syncAppHeight();
 if (location.search.includes('vvlog')) {
   const lines = JSON.parse(sessionStorage.getItem(VV_LOG_KEY) || '[]').map(e => JSON.stringify(e));
