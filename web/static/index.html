@@ -4050,6 +4050,30 @@ function resyncAppHeightAfterFocusChange(){
 }
 document.addEventListener('focusin', resyncAppHeightAfterFocusChange, true);
 document.addEventListener('focusout', resyncAppHeightAfterFocusChange, true);
+
+// DEBUG（一時的）：実機の visualViewport の値を直接確認するための常時表示オーバーレイ。
+// 原因調査用で、原因が特定でき次第この節は削除する
+(function(){
+  const dbg = document.createElement('div');
+  dbg.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:rgba(220,0,0,.9);color:#fff;'
+    + 'font:10px/1.4 monospace;padding:4px 6px;pointer-events:none;white-space:pre';
+  document.body.appendChild(dbg);
+  function upd(){
+    const vv = window.visualViewport;
+    dbg.textContent = (vv
+      ? `vv h=${Math.round(vv.height)} w=${Math.round(vv.width)} top=${Math.round(vv.offsetTop)} left=${Math.round(vv.offsetLeft)} scale=${vv.scale.toFixed(2)}`
+      : 'no visualViewport')
+      + `\nwin h=${window.innerHeight} scrollY=${window.scrollY}`
+      + `\napp-h=${document.documentElement.style.getPropertyValue('--app-h')} app.top=${app.style.top}`
+      + `\nappRect=${JSON.stringify(app.getBoundingClientRect())}`;
+  }
+  if (window.visualViewport) {
+    visualViewport.addEventListener('resize', upd);
+    visualViewport.addEventListener('scroll', upd);
+  }
+  setInterval(upd, 200);
+  upd();
+})();
 </script>
 </body>
 </html>
