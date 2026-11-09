@@ -4036,6 +4036,20 @@ if (window.visualViewport) {
   window.addEventListener('resize', syncAppHeight);
 }
 syncAppHeight();
+// ソフトキーボードの開閉アニメーション中は visualViewport の resize/scroll が
+// 途中の値で何度も発火し、アニメーションが収まったあとの最終的な値のイベントが
+// 発火しないことがある（特に、一度閉じてから再度フォーカスし直した場合）。
+// それにより高さ・表示位置がアニメーション途中の値のまま固定されてしまうのを防ぐため、
+// 入力欄のフォーカスが変化するたびに、アニメーションが収まるであろう時間の間
+// 繰り返し再同期する
+let appHeightResyncTimer = null;
+function resyncAppHeightAfterFocusChange(){
+  if (appHeightResyncTimer) clearInterval(appHeightResyncTimer);
+  appHeightResyncTimer = setInterval(syncAppHeight, 100);
+  setTimeout(() => { clearInterval(appHeightResyncTimer); appHeightResyncTimer = null; }, 1000);
+}
+document.addEventListener('focusin', resyncAppHeightAfterFocusChange, true);
+document.addEventListener('focusout', resyncAppHeightAfterFocusChange, true);
 </script>
 </body>
 </html>
