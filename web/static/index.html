@@ -62,7 +62,7 @@ body{
 button,input{font:inherit;color:inherit}
 /* iOS Safari は入力欄の font-size が 16px 未満だとフォーカス時に自動でページをズームする。
    その拡大・縮小の処理が端末やタイミングによっては固まることがある（scene-update watchdog）ため、16px 未満にならないようにする */
-input{font-size:16px}
+input,textarea{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
 .app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
@@ -575,9 +575,14 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-typing span:nth-child(3){animation-delay:.3s}
 @keyframes ai-bounce{0%,80%,100%{opacity:.3;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
 .ai-composer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border-strong);align-items:flex-end}
-.ai-composer input,.ai-composer textarea{flex:1;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);outline:none;min-width:0;font:inherit;color:inherit}
+/* font:inherit だと body の 14px を継承してしまい、16px 未満の入力欄に対する
+   iOS Safari のフォーカス時自動ズーム（63行目）が働いてしまうため、明示的に上書きする */
+.ai-composer input,.ai-composer textarea{flex:1;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);outline:none;min-width:0;font:inherit;font-size:16px;color:inherit}
 .ai-composer input{height:36px;padding:0 11px}
 .ai-composer textarea{min-height:36px;max-height:160px;padding:8px 11px;line-height:1.4;resize:none;overflow-y:auto}
+/* 横幅が狭いと placeholder が2行に折り返されるため、入力欄の最小高さを広げて隠れないようにする
+   （min-height はあくまで下限なので、実際に複数行入力したときの自動拡張の邪魔にはならない） */
+@media (max-width: 820px){ .ai-composer textarea{min-height:60px} }
 .ai-composer input:focus,.ai-composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .ai-composer button{flex-shrink:0}
 .ai-hint{padding:0 20px 14px;display:block}
@@ -4028,7 +4033,6 @@ function syncAppHeight(){
   const h = vv ? vv.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-h', h + 'px');
   app.style.top = (vv ? vv.offsetTop : 0) + 'px';
-  logVvDebug();
 }
 if (window.visualViewport) {
   visualViewport.addEventListener('resize', syncAppHeight);
@@ -4051,40 +4055,6 @@ function resyncAppHeightAfterFocusChange(){
 }
 document.addEventListener('focusin', resyncAppHeightAfterFocusChange, true);
 document.addEventListener('focusout', resyncAppHeightAfterFocusChange, true);
-
-// DEBUG（一時的）：画面上に常時表示するオーバーレイは、ソフトキーボード表示中は
-// 実機で潰れて読めなくなることが分かったため、代わりに visualViewport の値の推移を
-// localStorage に記録しておき、あとから ?vvlog を付けて開くとテキストとして
-// 確認できるようにする。原因特定後にこの節は削除する
-const VV_LOG_KEY = 'vvDebugLog';
-function logVvDebug(){
-  try {
-    const vv = window.visualViewport;
-    const r = app.getBoundingClientRect();
-    const entry = {
-      t: new Date().toISOString().slice(11, 23),
-      vvH: vv ? Math.round(vv.height) : null,
-      vvW: vv ? Math.round(vv.width) : null,
-      vvTop: vv ? Math.round(vv.offsetTop) : null,
-      vvScale: vv ? +vv.scale.toFixed(2) : null,
-      winH: window.innerHeight,
-      scrollY: window.scrollY,
-      appH: document.documentElement.style.getPropertyValue('--app-h'),
-      appTop: app.style.top,
-      rectTop: Math.round(r.top), rectH: Math.round(r.height),
-      active: document.activeElement ? document.activeElement.tagName : null,
-    };
-    const arr = JSON.parse(localStorage.getItem(VV_LOG_KEY) || '[]');
-    arr.push(entry);
-    while (arr.length > 80) arr.shift();
-    localStorage.setItem(VV_LOG_KEY, JSON.stringify(arr));
-  } catch (e) {}
-}
-if (location.search.includes('vvlog')) {
-  const lines = JSON.parse(localStorage.getItem(VV_LOG_KEY) || '[]').map(e => JSON.stringify(e));
-  document.body.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;font:12px/1.6 monospace;'
-    + 'padding:12px;color:#0f0;background:#000;margin:0">' + (lines.join('\n') || '(ログがありません)') + '</pre>';
-}
 </script>
 </body>
 </html>

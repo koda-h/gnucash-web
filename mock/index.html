@@ -62,7 +62,7 @@ body{
 button,input{font:inherit;color:inherit}
 /* iOS Safari は入力欄の font-size が 16px 未満だとフォーカス時に自動でページをズームする。
    その拡大・縮小の処理が端末やタイミングによっては固まることがある（scene-update watchdog）ため、16px 未満にならないようにする */
-input{font-size:16px}
+input,textarea{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
 .app{position:fixed;left:0;width:100%;top:0;display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
@@ -557,9 +557,14 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-typing span:nth-child(3){animation-delay:.3s}
 @keyframes ai-bounce{0%,80%,100%{opacity:.3;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
 .ai-composer{display:flex;gap:8px;padding:12px 20px;border-top:1px solid var(--border-strong);align-items:flex-end}
-.ai-composer input,.ai-composer textarea{flex:1;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);outline:none;min-width:0;font:inherit;color:inherit}
+/* font:inherit だと body の 14px を継承してしまい、16px 未満の入力欄に対する
+   iOS Safari のフォーカス時自動ズーム（65行目）が働いてしまうため、明示的に上書きする */
+.ai-composer input,.ai-composer textarea{flex:1;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);outline:none;min-width:0;font:inherit;font-size:16px;color:inherit}
 .ai-composer input{height:36px;padding:0 11px}
 .ai-composer textarea{min-height:36px;max-height:160px;padding:8px 11px;line-height:1.4;resize:none;overflow-y:auto}
+/* 横幅が狭いと placeholder が2行に折り返されるため、入力欄の最小高さを広げて隠れないようにする
+   （min-height はあくまで下限なので、実際に複数行入力したときの自動拡張の邪魔にはならない） */
+@media (max-width: 820px){ .ai-composer textarea{min-height:60px} }
 .ai-composer input:focus,.ai-composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .ai-composer button{flex-shrink:0}
 .ai-hint{padding:0 20px 14px;display:block}
