@@ -4032,11 +4032,37 @@ window.addEventListener('popstate', () => { if (state.book) syncViewFromLocation
 // に対して上下にずらす（visualViewport.offsetTop）ため、.app の高さだけ追従させても
 // ズレが残る。.app を position:fixed にして、高さだけでなく表示位置（top）も
 // visualViewport に合わせて追従させることで解決する。
+// DEBUG（一時的）：再現しない原因調査のため、visualViewport のイベントと実際に
+// 適用した値をすべて sessionStorage に記録する。?vvlog=1 を付けて開くと確認できる。
+// 原因特定後にこの節は削除する
+const VV_LOG_KEY = 'vvDebugLog2';
+const vvLogStart = Date.now();
+function logVvDebug(tag){
+  try {
+    const vv = window.visualViewport;
+    const r = app.getBoundingClientRect();
+    const entry = {
+      ms: Date.now() - vvLogStart, tag,
+      vvH: vv ? Math.round(vv.height) : null,
+      vvTop: vv ? Math.round(vv.offsetTop) : null,
+      vvScale: vv ? +vv.scale.toFixed(2) : null,
+      scrollY: window.scrollY,
+      appTop: app.style.top, appH: document.documentElement.style.getPropertyValue('--app-h'),
+      rectTop: Math.round(r.top), rectBottom: Math.round(r.bottom),
+    };
+    const arr = JSON.parse(sessionStorage.getItem(VV_LOG_KEY) || '[]');
+    arr.push(entry);
+    while (arr.length > 150) arr.shift();
+    sessionStorage.setItem(VV_LOG_KEY, JSON.stringify(arr));
+  } catch (e) {}
+}
+
 function syncAppHeight(){
   const vv = window.visualViewport;
   const h = vv ? vv.height : window.innerHeight;
   document.documentElement.style.setProperty('--app-h', h + 'px');
   app.style.top = (vv ? vv.offsetTop : 0) + 'px';
+  logVvDebug('apply');
 }
 // キーボードの開閉アニメーション中は visualViewport の resize/scroll が途中の値で
 // 何度も発火し、そのたびに即座に反映すると、一瞬おかしな位置（例えば画面の一番上）
@@ -4050,14 +4076,19 @@ function scheduleSyncAppHeight(delay){
   syncAppHeightTimer = setTimeout(syncAppHeight, delay);
 }
 if (window.visualViewport) {
-  visualViewport.addEventListener('resize', () => scheduleSyncAppHeight(120));
-  visualViewport.addEventListener('scroll', () => scheduleSyncAppHeight(120));
+  visualViewport.addEventListener('resize', () => { logVvDebug('resize'); scheduleSyncAppHeight(120); });
+  visualViewport.addEventListener('scroll', () => { logVvDebug('scroll'); scheduleSyncAppHeight(120); });
 } else {
   window.addEventListener('resize', () => scheduleSyncAppHeight(120));
 }
-document.addEventListener('focusin', () => scheduleSyncAppHeight(350), true);
-document.addEventListener('focusout', () => scheduleSyncAppHeight(350), true);
+document.addEventListener('focusin', () => { logVvDebug('focusin'); scheduleSyncAppHeight(350); }, true);
+document.addEventListener('focusout', () => { logVvDebug('focusout'); scheduleSyncAppHeight(350); }, true);
 syncAppHeight();
+if (location.search.includes('vvlog')) {
+  const lines = JSON.parse(sessionStorage.getItem(VV_LOG_KEY) || '[]').map(e => JSON.stringify(e));
+  document.body.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;font:12px/1.6 monospace;'
+    + 'padding:12px;color:#0f0;background:#000;margin:0">' + (lines.join('\n') || '(ログがありません)') + '</pre>';
+}
 </script>
 </body>
 </html>
