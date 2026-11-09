@@ -915,6 +915,28 @@ class Book:
                                 [row[k] for k in keys])
         return {"guid": snap["transaction"]["guid"]}
 
+    # ---- 小さな状態（設定・会話履歴・MCP関連）をJSONファイルに永続化する共通処理
+    # GnuCash の SQLite とは別に、同じフォルダに置く小さな JSON ファイルがいくつかある
+    # （mf-import.json・app-settings.json・ai-conversation.json・mcp-mappings.json・mcp-keys.json）。
+    # 読み込み・atomic な書き込みの形はどれも同じなのでここにまとめ、各 _load_*/_save_* は
+    # 「ファイルが無い・壊れているときの既定値」と「読み込んだ後の形の整形・検証」だけを行う
+
+    @staticmethod
+    def _read_json(path, default):
+        if not path.exists():
+            return default
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return default
+
+    @staticmethod
+    def _write_json_atomic(path, data):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+
     # ---- マネーフォワード ME 取り込み：科目マッピング・取り込み済みIDの永続化
     # GnuCash の SQLite とは別に、同じフォルダの mf-import.json に保存する（auth.json と同じ置き場所の流儀）。
     # CSVの解析・振替の突き合わせ・マッピング適用はフロント側（JS）で行い、ここではマッピングの保存と、
@@ -924,22 +946,14 @@ class Book:
         return Path(self.path).parent / "mf-import.json"
 
     def _load_mf_import(self):
-        p = self._mf_import_path()
-        if not p.exists():
-            return {"inst": {}, "cat": {}, "desc": {}, "ids": []}
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        data = self._read_json(self._mf_import_path(), None)
+        if data is None:
             return {"inst": {}, "cat": {}, "desc": {}, "ids": []}
         return {"inst": data.get("inst") or {}, "cat": data.get("cat") or {}, "desc": data.get("desc") or {},
                 "ids": data.get("ids") or []}
 
     def _save_mf_import(self, data):
-        p = self._mf_import_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
+        self._write_json_atomic(self._mf_import_path(), data)
 
     def mf_import_mappings(self):
         with self._mf_lock:
@@ -1015,22 +1029,14 @@ class Book:
         return Path(self.path).parent / "app-settings.json"
 
     def _load_settings(self):
-        p = self._settings_path()
-        if not p.exists():
-            return dict(self.DEFAULT_SETTINGS)
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        data = self._read_json(self._settings_path(), None)
+        if data is None:
             return dict(self.DEFAULT_SETTINGS)
         return {"aiIncludeTxDetails": bool(data.get("aiIncludeTxDetails", False)),
                 "mcpEnabled": bool(data.get("mcpEnabled", False))}
 
     def _save_settings(self, data):
-        p = self._settings_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
+        self._write_json_atomic(self._settings_path(), data)
 
     def get_settings(self):
         with self._settings_lock:
@@ -1069,12 +1075,8 @@ class Book:
         return Path(self.path).parent / name
 
     def _load_conversation(self, kind="analysis"):
-        p = self._conversation_path(kind)
-        if not p.exists():
-            return {"period": None, "messages": [], "updatedAt": None}
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        data = self._read_json(self._conversation_path(kind), None)
+        if data is None:
             return {"period": None, "messages": [], "updatedAt": None}
         messages = data.get("messages")
         if not isinstance(messages, list):
@@ -1082,11 +1084,7 @@ class Book:
         return {"period": data.get("period"), "messages": messages, "updatedAt": data.get("updatedAt")}
 
     def _save_conversation_file(self, data, kind="analysis"):
-        p = self._conversation_path(kind)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
+        self._write_json_atomic(self._conversation_path(kind), data)
 
     @staticmethod
     def _trim_conversation(messages):
@@ -1132,21 +1130,11 @@ class Book:
         return Path(self.path).parent / "mcp-mappings.json"
 
     def _load_mcp_mappings(self):
-        p = self._mcp_mappings_path()
-        if not p.exists():
-            return {}
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
+        data = self._read_json(self._mcp_mappings_path(), {})
         return data if isinstance(data, dict) else {}
 
     def _save_mcp_mappings(self, data):
-        p = self._mcp_mappings_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
+        self._write_json_atomic(self._mcp_mappings_path(), data)
 
     # 残高を画面上「正の値」で見せるために符号を反転する科目種別（index.html の TYPES の credit と同じ）。
     # これらの科目を amount の起点（account）にして取引を作るときは、金額の符号も反転させる必要がある
@@ -1242,21 +1230,11 @@ class Book:
         return Path(self.path).parent / "mcp-keys.json"
 
     def _load_mcp_keys(self):
-        p = self._mcp_keys_path()
-        if not p.exists():
-            return []
-        try:
-            data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
+        data = self._read_json(self._mcp_keys_path(), [])
         return data if isinstance(data, list) else []
 
     def _save_mcp_keys(self, keys):
-        p = self._mcp_keys_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(keys, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(p)
+        self._write_json_atomic(self._mcp_keys_path(), keys)
 
     @staticmethod
     def _hash_mcp_key(token, salt):
