@@ -586,6 +586,8 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
 .ai-pending .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
 .ai-pending .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.ai-pending-lines{margin-top:6px;display:flex;flex-direction:column;gap:2px}
+.ai-pending-line{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--muted)}
 .ai-pending-bar{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 .link-btn{border:0;background:none;color:var(--accent);padding:0;cursor:pointer;font:inherit;font-weight:500;text-decoration:underline}
 .switch{position:relative;display:inline-block;width:40px;height:22px;flex:none}
@@ -2578,17 +2580,24 @@ function execLedgerTool(input){
     return {error: [catRes.error, payRes.error].filter(Boolean).join('\n') + '\n\n確認できたら、正式な科目名を教えてください。'};
   }
   const date = input.date || state.today;
-  state.aiLedger.pending = {category: catRes.resolved, payment: payRes.resolved, amount: Math.abs(amount),
-                             date, desc: input.description || ''};
+  // ※ モックの簡易パーサーは複数科目への分割（lines）までは解釈しないため、常に1行だけ
+  state.aiLedger.pending = {lines: [{category: catRes.resolved, amount: Math.abs(amount)}],
+                             payment: payRes.resolved, date, desc: input.description || ''};
   return {ok: true};
 }
 function aiPendingCard(p){
   if (!p) return '';
   const c = bookCommodity();
+  const total = p.lines.reduce((s, l) => s + l.amount, 0);
+  const split = p.lines.length > 1;
+  const linesHtml = split
+    ? `<div class="ai-pending-lines">${p.lines.map(l => `<div class="ai-pending-line"><span>${esc(l.category.name)}</span><span>${money(l.amount, c)}</span></div>`).join('')}</div>`
+    : '';
   return `
     <div class="ai-pending">
       <div class="lbl">この内容で記録しますか？</div>
-      <div>${esc(p.date)}　${esc(p.category.name)}　${money(p.amount, c)}</div>
+      <div>${esc(p.date)}　${split ? '合計 ' + money(total, c) : esc(p.lines[0].category.name) + '　' + money(total, c)}</div>
+      ${linesHtml}
       <div class="sub">${esc(p.payment.name)} から支払い${p.desc ? '　説明: ' + esc(p.desc) : ''}</div>
       <div class="ai-pending-bar">
         <button type="button" class="btn ghost" id="aiPendingCancel">キャンセル</button>
@@ -2678,11 +2687,24 @@ async function confirmAiPending(){
   if (!p) return;
   st.pending = null;
   try {
-    await api('POST', '/api/transactions', {
-      account: p.category.guid, other: p.payment.guid, date: p.date, desc: p.desc,
-      amount: String(p.category.credit ? -p.amount : p.amount),
-    });
-    st.messages.push({role: 'assistant', content: `✅ 記録しました：${p.date}　${p.category.name}　${money(p.amount, bookCommodity())}（${p.payment.name}）`});
+    const c = bookCommodity();
+    if (p.lines.length === 1) {
+      const l = p.lines[0];
+      await api('POST', '/api/transactions', {
+        account: l.category.guid, other: p.payment.guid, date: p.date, desc: p.desc,
+        amount: String(l.category.credit ? -l.amount : l.amount),
+      });
+    } else {
+      const catSplits = p.lines.map(l => ({account: l.category.guid, memo: '', amount: String(l.category.credit ? -l.amount : l.amount)}));
+      const signedTotal = p.lines.reduce((s, l) => s + (l.category.credit ? -l.amount : l.amount), 0);
+      await api('POST', '/api/transactions', {
+        date: p.date, desc: p.desc,
+        splits: [...catSplits, {account: p.payment.guid, memo: '', amount: String(-signedTotal)}],
+      });
+    }
+    const total = p.lines.reduce((s, l) => s + l.amount, 0);
+    const summary = p.lines.length > 1 ? p.lines.map(l => `${l.category.name} ${money(l.amount, c)}`).join('、') : p.lines[0].category.name;
+    st.messages.push({role: 'assistant', content: `✅ 記録しました：${p.date}　${summary}　合計${money(total, c)}（${p.payment.name}）`});
   } catch (e) {
     st.messages.push({role: 'assistant', content: `記録に失敗しました（${e.message}）。`, error: true});
   }

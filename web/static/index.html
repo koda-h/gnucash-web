@@ -604,6 +604,8 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
 .ai-pending .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
 .ai-pending .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+.ai-pending-lines{margin-top:6px;display:flex;flex-direction:column;gap:2px}
+.ai-pending-line{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;color:var(--muted)}
 .ai-pending-bar{display:flex;gap:8px;justify-content:flex-end;margin-top:10px}
 .link-btn{border:0;background:none;color:var(--accent);padding:0;cursor:pointer;font:inherit;font-weight:500;text-decoration:underline}
 .switch{position:relative;display:inline-block;width:40px;height:22px;flex:none}
@@ -2593,23 +2595,37 @@ const AI_LEDGER_SYSTEM_PROMPT = [
   'ユーザーはレシートや領収書の画像を送ることがあります。その場合は画像から日付・合計金額・店名や購入内容を読み取り、店名や購入内容から category（勘定科目のヒント）を推測して add_transaction を呼び出してください。日付が読み取れない場合は省略してください（今日の日付になります）。支払い方法（現金・カード等）が画像からもテキストからも分からない場合は payment_account を省略し、ユーザーに確認してください。',
   '科目名が曖昧な場合はツールの結果に候補が示されるので、ユーザーに確認してから confirmed_category／confirmed_payment_account を指定して再度呼び出してください。',
   '金額・支払い元（入金先）が分からない場合は、ツールを呼ばずにユーザーに質問してください。',
+  '1つの支払いを複数の科目に分けて記録したい場合（例：「コンビニで1000円、内訳は食費700円と日用品300円」）は、amount／category の代わりに lines（2件以上の配列）を指定して add_transaction を呼び出してください。支払い元（payment_account）は分割時も1つだけです。内訳の金額が分からない・合計と合わない場合は、ツールを呼ばずにユーザーに確認してください。',
   '重要：add_transaction を呼んでも、その場で実際に記帳されるわけではありません。ユーザーが画面の確認ボタンを押すまでは記録されないので、ツールの結果を踏まえて「この内容でよろしいですか？」のように確認を促す返答をしてください。',
 ].join('\n');
 const LEDGER_TOOLS = [{
   name: 'add_transaction',
-  description: '取引の記録を準備します（例: 「食費 500円」）。この時点ではまだ記帳されず、ユーザーが画面で確認・確定する必要があります。',
+  description: '取引の記録を準備します（例: 「食費 500円」）。1つの支払いを複数の科目に分けたい場合は lines を使ってください。この時点ではまだ記帳されず、ユーザーが画面で確認・確定する必要があります。',
   input_schema: {
     type: 'object',
     properties: {
-      amount: {type: 'number', description: '金額。支出・収入のどちらでも正の数で指定する'},
-      category: {type: 'string', description: '勘定科目のヒント（例: 食費、交際費、給与）。費用科目なら支出、収益科目なら収入として記録される'},
-      payment_account: {type: 'string', description: '支払い元・入金先のヒント（例: 現金、普通預金）'},
+      amount: {type: 'number', description: '金額。支出・収入のどちらでも正の数で指定する（lines を使う場合は不要）'},
+      category: {type: 'string', description: '勘定科目のヒント（例: 食費、交際費、給与）。費用科目なら支出、収益科目なら収入として記録される（lines を使う場合は不要）'},
+      confirmed_category: {type: 'string', description: 'category が曖昧だった場合に、ユーザーが選んだ正式な科目名（候補のnameをそのまま）。指定すると category の表記を次回のために記憶する（lines を使う場合は不要）'},
+      lines: {
+        type: 'array',
+        description: '1つの支払いを複数の科目に分けて記録する場合の内訳（2件以上）。指定する場合、amount・category・confirmed_category は使わない',
+        items: {
+          type: 'object',
+          properties: {
+            amount: {type: 'number', description: 'この科目に割り当てる金額（正の数）'},
+            category: {type: 'string', description: '勘定科目のヒント'},
+            confirmed_category: {type: 'string', description: 'category が曖昧だった場合に、ユーザーが選んだ正式な科目名'},
+          },
+          required: ['amount', 'category'],
+        },
+      },
+      payment_account: {type: 'string', description: '支払い元・入金先のヒント（例: 現金、普通預金）。分割時も1つだけ指定する'},
       description: {type: 'string', description: '取引の説明・メモ（省略可）'},
       date: {type: 'string', description: '日付（YYYY-MM-DD）。省略時は今日'},
-      confirmed_category: {type: 'string', description: 'category が曖昧だった場合に、ユーザーが選んだ正式な科目名（候補のnameをそのまま）。指定すると category の表記を次回のために記憶する'},
       confirmed_payment_account: {type: 'string', description: 'confirmed_category と同様。payment_account 用'},
     },
-    required: ['amount', 'category'],
+    required: [],
   },
 }];
 // 科目名のヒントをサーバーの /api/mcp/resolve-account で解決する。確認済み（confirmed）が
@@ -2632,28 +2648,44 @@ async function resolveLedgerField(hint, confirmed, label){
 async function execLedgerTool(tu){
   const st = state.aiLedger;
   const a = tu.input || {};
-  const amount = Number(a.amount);
-  if (!isFinite(amount) || amount === 0) return 'amount には 0 以外の数値を指定してください。';
-  const [catRes, payRes] = await Promise.all([
-    resolveLedgerField(a.category, a.confirmed_category, 'category'),
+  // lines（分割）が指定されていればそちらを使い、無ければ amount/category の単純な1行として扱う
+  const isSplit = Array.isArray(a.lines);
+  const rawLines = isSplit ? a.lines : [{amount: a.amount, category: a.category, confirmed_category: a.confirmed_category}];
+  if (isSplit && rawLines.length < 2) return 'lines は2件以上を指定してください。1件だけの場合は amount・category を直接指定してください。';
+  for (const [i, l] of rawLines.entries()) {
+    const amt = Number(l.amount);
+    if (!isFinite(amt) || amt === 0) return isSplit ? `lines の${i + 1}行目: amount には0以外の数値を指定してください。` : 'amount には 0 以外の数値を指定してください。';
+  }
+  const [lineResults, payRes] = await Promise.all([
+    Promise.all(rawLines.map(l => resolveLedgerField(l.category, l.confirmed_category, 'category'))),
     resolveLedgerField(a.payment_account, a.confirmed_payment_account, 'payment_account'),
   ]);
-  if (catRes.error || payRes.error) {
-    return [catRes.error, payRes.error].filter(Boolean).join('\n')
+  const lineErrors = lineResults.map((r, i) => r.error ? (isSplit ? `lines の${i + 1}行目: ${r.error}` : r.error) : null).filter(Boolean);
+  const errors = [...lineErrors, payRes.error].filter(Boolean);
+  if (errors.length) {
+    return errors.join('\n')
       + '\n\n確認できたら、add_transaction を confirmed_category（および必要なら confirmed_payment_account）を指定して同じ内容でもう一度呼び出してください。';
   }
   const date = String(a.date || '').trim() || new Date().toISOString().slice(0, 10);
-  st.pending = {category: catRes.resolved, payment: payRes.resolved, amount: Math.abs(amount),
-                date, desc: String(a.description || '').trim()};
+  st.pending = {
+    lines: rawLines.map((l, i) => ({category: lineResults[i].resolved, amount: Math.abs(Number(l.amount))})),
+    payment: payRes.resolved, date, desc: String(a.description || '').trim(),
+  };
   return '内容を確認用に準備しました。ユーザーが画面の確認ボタンで記録を確定するまで、まだ記帳されていません。内容をユーザーに伝えて、確認を促してください。';
 }
 function aiPendingCard(p){
   if (!p) return '';
   const c = bookCommodity();
+  const total = p.lines.reduce((s, l) => s + l.amount, 0);
+  const split = p.lines.length > 1;
+  const linesHtml = split
+    ? `<div class="ai-pending-lines">${p.lines.map(l => `<div class="ai-pending-line"><span>${esc(l.category.name)}</span><span>${money(l.amount, c)}</span></div>`).join('')}</div>`
+    : '';
   return `
     <div class="ai-pending">
       <div class="lbl">この内容で記録しますか？</div>
-      <div>${esc(p.date)}　${esc(p.category.name)}　${money(p.amount, c)}</div>
+      <div>${esc(p.date)}　${split ? '合計 ' + money(total, c) : esc(p.lines[0].category.name) + '　' + money(total, c)}</div>
+      ${linesHtml}
       <div class="sub">${esc(p.payment.name)} から支払い${p.desc ? '　説明: ' + esc(p.desc) : ''}</div>
       <div class="ai-pending-bar">
         <button type="button" class="btn ghost" id="aiPendingCancel">キャンセル</button>
@@ -2725,11 +2757,25 @@ async function confirmAiPending(){
   if (!p) return;
   st.pending = null;
   try {
-    await api('POST', '/api/transactions', {
-      account: p.category.guid, other: p.payment.guid, date: p.date, desc: p.desc,
-      amount: String(p.category.credit ? -p.amount : p.amount),
-    });
-    st.messages.push({role: 'assistant', content: `✅ 記録しました：${p.date}　${p.category.name}　${money(p.amount, bookCommodity())}（${p.payment.name}）`});
+    const c = bookCommodity();
+    if (p.lines.length === 1) {
+      const l = p.lines[0];
+      await api('POST', '/api/transactions', {
+        account: l.category.guid, other: p.payment.guid, date: p.date, desc: p.desc,
+        amount: String(l.category.credit ? -l.amount : l.amount),
+      });
+    } else {
+      // 分割取引：各科目行＋支払い元行（科目行の符号反転した合計）で貸借を一致させる
+      const catSplits = p.lines.map(l => ({account: l.category.guid, memo: '', amount: String(l.category.credit ? -l.amount : l.amount)}));
+      const signedTotal = p.lines.reduce((s, l) => s + (l.category.credit ? -l.amount : l.amount), 0);
+      await api('POST', '/api/transactions', {
+        date: p.date, desc: p.desc,
+        splits: [...catSplits, {account: p.payment.guid, memo: '', amount: String(-signedTotal)}],
+      });
+    }
+    const total = p.lines.reduce((s, l) => s + l.amount, 0);
+    const summary = p.lines.length > 1 ? p.lines.map(l => `${l.category.name} ${money(l.amount, c)}`).join('、') : p.lines[0].category.name;
+    st.messages.push({role: 'assistant', content: `✅ 記録しました：${p.date}　${summary}　合計${money(total, c)}（${p.payment.name}）`});
   } catch (e) {
     st.messages.push({role: 'assistant', content: `記録に失敗しました（${e.message}）。`, error: true});
   }
