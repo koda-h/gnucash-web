@@ -4108,11 +4108,18 @@ async function boot(){
 // に対して上下にずらす（visualViewport.offsetTop）ため、.app の高さだけ追従させても
 // ズレが残る。.app を position:fixed にして、高さだけでなく表示位置（top）も
 // visualViewport に合わせて追従させることで解決する。
+// 実機で確認したところ、キーボード表示時にブラウザがまず window.scrollY を
+// 動かし（＝ページ自体をスクロール）、visualViewport.offsetTop がそれに追従するのは
+// 数百ms 後だった。.app の表示位置を visualViewport.offsetTop だけから計算すると、
+// その数百msの間、実際にはもうずれているのに古い（0の）位置のまま取り残され、
+// 入力欄が画面外（一番上）にずれて見えていた。window.scrollY は即座に更新されるため、
+// 両方のうちより大きい方（＝よりズレを反映している方）を使うことで、この遅れを無くす
 function syncAppHeight(){
   const vv = window.visualViewport;
   const h = vv ? vv.height : window.innerHeight;
+  const top = Math.max(window.scrollY, vv ? vv.offsetTop : 0);
   document.documentElement.style.setProperty('--app-h', h + 'px');
-  app.style.top = (vv ? vv.offsetTop : 0) + 'px';
+  app.style.top = top + 'px';
 }
 // visualViewport が実際にずれる瞬間（キーボードの開閉でブラウザが visualViewport を
 // 動かす瞬間）と、こちら側の .app の表示位置・高さの更新が同じタイミングで起きないと、
@@ -4126,6 +4133,8 @@ if (window.visualViewport) {
 } else {
   window.addEventListener('resize', syncAppHeight);
 }
+// window.scrollY は visualViewport より先に動くため、こちらも直接監視する
+window.addEventListener('scroll', syncAppHeight, { passive: true });
 // visualViewport のイベントが発火しない場合の保険として、フォーカス変化後にも
 // 少し遅らせて確認する（こちらは遅延があっても実害が小さいケースの保険のみ）
 document.addEventListener('focusin', () => setTimeout(syncAppHeight, 350), true);
