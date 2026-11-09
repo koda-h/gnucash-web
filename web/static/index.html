@@ -58,7 +58,7 @@ button,input{font:inherit;color:inherit}
 input{font-size:16px}
 .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
 
-.app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh}
+.app{display:grid;grid-template-columns:340px 1fr;height:100vh;height:100dvh;height:var(--app-h, 100dvh)}
 
 /* ---------- Sidebar ---------- */
 .sidebar{border-right:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;min-height:0}
@@ -4008,6 +4008,21 @@ async function syncViewFromLocation(){
   }
 }
 window.addEventListener('popstate', () => { if (state.book) syncViewFromLocation(); });
+
+// スマホでソフトキーボードが開くと、レイアウト上の高さ（dvh）はキーボード分だけ縮まない
+// ブラウザがあるため、.app の高さを固定のままにしておくと入力欄下部のボタン等が
+// キーボードの裏に隠れてしまう。visualViewport の実際の表示高さを追従させて解決する。
+function syncAppHeight(){
+  const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty('--app-h', h + 'px');
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', syncAppHeight);
+  visualViewport.addEventListener('scroll', syncAppHeight);
+} else {
+  window.addEventListener('resize', syncAppHeight);
+}
+syncAppHeight();
 </script>
 </body>
 </html>
