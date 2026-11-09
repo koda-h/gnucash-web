@@ -3790,8 +3790,11 @@ async function toggleSplit(guid){
   render();
 }
 main.addEventListener('keydown', e => {
-  // AIアシスタントの入力欄：Enterで送信、Shift+Enterで改行（textareaの既定どおり）
-  if (e.target.matches('.ai-composer textarea') && e.key === 'Enter' && !e.shiftKey) {
+  // AIアシスタントの入力欄：Enterで送信、Shift+Enterで改行（textareaの既定どおり）。
+  // IME変換確定のEnterで誤送信しないよう、変換中（isComposing、環境によっては
+  // keyCode 229 でしか判定できない）は送信しない
+  if (e.target.matches('.ai-composer textarea') && e.key === 'Enter' && !e.shiftKey
+      && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();
     e.target.form.requestSubmit();
     return;
