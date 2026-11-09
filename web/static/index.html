@@ -4027,73 +4027,36 @@ window.addEventListener('popstate', () => { if (state.book) syncViewFromLocation
 // スマホでソフトキーボードが開くと、レイアウト上の高さ（dvh）はキーボード分だけ縮まない
 // ブラウザがあるため、.app の高さを固定のままにしておくと入力欄下部のボタン等が
 // キーボードの裏に隠れてしまう。さらに iOS Safari は、フォーカスした入力欄を見せる際に
-// window.scrollY ではなく visualViewport（実際に見えている領域）だけを layout viewport
-// に対して上下にずらす（visualViewport.offsetTop）ため、.app の高さだけ追従させても
-// ズレが残る。.app を position:fixed にして、高さだけでなく表示位置（top）も
-// visualViewport に合わせて追従させることで解決する。
-// DEBUG（一時的）：再現しない原因調査のため、visualViewport のイベントと実際に
-// 適用した値をすべて sessionStorage に記録する。?vvlog=1 を付けて開くと確認できる。
-// 原因特定後にこの節は削除する
-const VV_LOG_KEY = 'vvDebugLog2';
-const vvLogStart = Date.now();
-function logVvDebug(tag){
-  try {
-    const vv = window.visualViewport;
-    const r = app.getBoundingClientRect();
-    const entry = {
-      ms: Date.now() - vvLogStart, tag,
-      vvH: vv ? Math.round(vv.height) : null,
-      vvTop: vv ? Math.round(vv.offsetTop) : null,
-      vvScale: vv ? +vv.scale.toFixed(2) : null,
-      scrollY: window.scrollY,
-      appTop: app.style.top, appH: document.documentElement.style.getPropertyValue('--app-h'),
-      rectTop: Math.round(r.top), rectBottom: Math.round(r.bottom),
-    };
-    const arr = JSON.parse(sessionStorage.getItem(VV_LOG_KEY) || '[]');
-    arr.push(entry);
-    while (arr.length > 150) arr.shift();
-    sessionStorage.setItem(VV_LOG_KEY, JSON.stringify(arr));
-  } catch (e) {}
-}
-
-// ログで確認したところ、キーボード表示時にブラウザがまず window.scrollY を
-// 動かし（＝ページ自体をスクロール）、visualViewport.offsetTop がそれに追従するのは
-// 数百ms 後だった。.app の表示位置を visualViewport.offsetTop だけから計算すると、
-// その数百msの間、実際にはもうずれているのに古い（0の）位置のまま取り残され、
-// 入力欄が画面外（一番上）にずれて見えていた。window.scrollY は即座に更新されるため、
-// 両方のうちより大きい方（＝よりズレを反映している方）を使うことで、この遅れを無くす
+// まず window.scrollY を動かしてページ自体をスクロールし、visualViewport.offsetTop が
+// それに追従するのは数百ms後になる。.app の表示位置を visualViewport.offsetTop だけから
+// 計算すると、その数百msの間は実際にはもうずれているのに古い（0の）位置のまま取り残され、
+// 入力欄が画面の一番上に飛んで見えてしまう。window.scrollY は即座に更新されるため、
+// window.scrollY と visualViewport.offsetTop のうち大きい方（＝よりズレを反映している方）
+// を使うことでこの遅れを無くし、.app を position:fixed にして高さ・表示位置の両方を
+// 追従させることで解決する
 function syncAppHeight(){
   const vv = window.visualViewport;
   const h = vv ? vv.height : window.innerHeight;
   const top = Math.max(window.scrollY, vv ? vv.offsetTop : 0);
   document.documentElement.style.setProperty('--app-h', h + 'px');
   app.style.top = top + 'px';
-  logVvDebug('apply');
 }
-// visualViewport が実際にずれる瞬間（キーボードの開閉でブラウザが visualViewport を
-// 動かす瞬間）と、こちら側の .app の表示位置・高さの更新が同じタイミングで起きないと、
-// その間の一瞬だけ入力欄が画面の一番上などおかしな位置に見えてしまう。そのため
-// resize/scroll イベントには遅延やアニメーションを挟まず、即座に反映する。
-// （以前 100ms間隔の再同期や transition、デバウンスを試したが、それらはいずれも
-// このズレの時間を長く・目立たせる方向に働いていたため廃止した）
+// resize/scroll イベントには遅延やアニメーションを挟まず、即座に反映する
+// （遅延・transitionを挟むと、ブラウザが visualViewport をずらす瞬間との間に
+// ズレが生まれ、入力欄が一瞬おかしな位置に見えてしまうため）
 if (window.visualViewport) {
-  visualViewport.addEventListener('resize', () => { logVvDebug('resize'); syncAppHeight(); });
-  visualViewport.addEventListener('scroll', () => { logVvDebug('scroll'); syncAppHeight(); });
+  visualViewport.addEventListener('resize', syncAppHeight);
+  visualViewport.addEventListener('scroll', syncAppHeight);
 } else {
   window.addEventListener('resize', syncAppHeight);
 }
 // window.scrollY は visualViewport より先に動くため、こちらも直接監視する
-window.addEventListener('scroll', () => { logVvDebug('winscroll'); syncAppHeight(); }, { passive: true });
+window.addEventListener('scroll', syncAppHeight, { passive: true });
 // visualViewport のイベントが発火しない場合の保険として、フォーカス変化後にも
 // 少し遅らせて確認する（こちらは遅延があっても実害が小さいケースの保険のみ）
-document.addEventListener('focusin', () => { logVvDebug('focusin'); setTimeout(syncAppHeight, 350); }, true);
-document.addEventListener('focusout', () => { logVvDebug('focusout'); setTimeout(syncAppHeight, 350); }, true);
+document.addEventListener('focusin', () => setTimeout(syncAppHeight, 350), true);
+document.addEventListener('focusout', () => setTimeout(syncAppHeight, 350), true);
 syncAppHeight();
-if (location.search.includes('vvlog')) {
-  const lines = JSON.parse(sessionStorage.getItem(VV_LOG_KEY) || '[]').map(e => JSON.stringify(e));
-  document.body.innerHTML = '<pre style="white-space:pre-wrap;word-break:break-all;font:12px/1.6 monospace;'
-    + 'padding:12px;color:#0f0;background:#000;margin:0">' + (lines.join('\n') || '(ログがありません)') + '</pre>';
-}
 </script>
 </body>
 </html>
