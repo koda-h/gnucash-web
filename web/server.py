@@ -1087,12 +1087,26 @@ class Book:
         self._write_json_atomic(self._conversation_path(kind), data)
 
     @staticmethod
+    def _is_visible_user_message(m):
+        """ツール結果（tool_result）の受け渡しではない、ユーザー自身の発言かどうか。
+        content は通常の発言ならプレーンな文字列、レシート画像添付なら image/text ブロックの配列
+        （tool_result ブロックは含まない）。ツール結果の配列とはここで区別する"""
+        if m.get("role") != "user":
+            return False
+        content = m.get("content")
+        if isinstance(content, str):
+            return True
+        if isinstance(content, list):
+            return not any(b.get("type") == "tool_result" for b in content)
+        return False
+
+    @staticmethod
     def _trim_conversation(messages):
-        # 可視のユーザー発言（content が文字列）を境界に往復単位でグループ化し、直近
-        # AI_MAX_EXCHANGES 件だけ残す（ツール呼び出し用の非表示メッセージはその往復に含めて一緒に残す）
+        # 可視のユーザー発言を境界に往復単位でグループ化し、直近 AI_MAX_EXCHANGES 件だけ残す
+        # （ツール呼び出し用の非表示メッセージはその往復に含めて一緒に残す）
         groups = []
         for m in messages:
-            if m.get("role") == "user" and isinstance(m.get("content"), str):
+            if Book._is_visible_user_message(m):
                 groups.append([m])
             elif groups:
                 groups[-1].append(m)
