@@ -2902,7 +2902,7 @@ function renderAiAnalysisBody(){
         <textarea name="msg" rows="1" placeholder="質問を入力（例：貯金を増やすには？）　Shift+Enterで改行" autocomplete="off" ${st.loading ? 'disabled' : ''}></textarea>
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
-      <div class="hint ai-hint">※ AIの回答は参考情報です。重要な判断はご自身でご確認ください。会話は自動的に保存され、直近20往復分のみ保持されます（古いやり取りは自動的に削除されます）。</div>
+      <div class="hint ai-hint">※ AIの回答は参考情報です。会話は直近20往復分のみ保存されます。</div>
     </div>`;
 }
 function renderAiLedgerBody(){
@@ -2912,15 +2912,14 @@ function renderAiLedgerBody(){
   const dis = st.loading || !writable;
   return `
     <div class="card ai-card">
-      <div class="ai-period-bar">
-        <div class="ai-note" style="margin:0">「食費 500円」のように話しかけるか、レシート画像を添付すると、科目を確認のうえ取引を記録します。</div>
-        ${st.messages.length ? '<button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>' : ''}
-      </div>
+      ${st.messages.length ? `<div class="ai-period-bar" style="justify-content:flex-end">
+        <button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>
+      </div>` : ''}
       <div class="scroll ai-scroll" id="scroll" data-account="__ailedger">
         ${!writable ? `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため記帳できません' : 'GnuCash デスクトップのロック中のため記帳できません'}</div>` : ''}
         ${st.messages.length ? st.messages.map(aiBubble).join('') : `
           <div class="ai-empty">
-            <div class="ai-note">例：「食費 500円」「給与 300000円 普通預金」のように話しかけてください。レシート画像を添付して読み取らせることもできます。科目が曖昧な場合は確認します。実際の記録前に必ず確認画面が表示されます。</div>
+            <div class="ai-note">「食費 500円」のように話しかけるか、レシート画像を添付してください。科目が曖昧な場合は確認し、記録前に必ず確認画面が表示されます。</div>
           </div>`}
         ${st.streamText != null ? `<div class="ai-msg assistant raw" id="aiStreamBubble">${esc(st.streamText)}</div>` : ''}
         ${st.loading && st.streamText == null ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
@@ -2940,7 +2939,7 @@ function renderAiLedgerBody(){
           <button type="submit" class="btn primary" ${dis ? 'disabled' : ''}>送信</button>
         </form>
       </div>
-      <div class="hint ai-hint">※ 実際の記録はこの画面で確認してから行われます。会話は自動的に保存され、直近20往復分のみ保持されます。</div>
+      <div class="hint ai-hint">※ 記録前に画面で確認します。会話は直近20往復分のみ保存されます。</div>
     </div>`;
 }
 
