@@ -531,8 +531,6 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-empty{padding:16px 4px;display:flex;flex-direction:column;gap:16px;align-items:flex-start;max-width:480px}
 .ai-note{font-size:12.5px;color:var(--muted);line-height:1.6;background:var(--surface-2);border-radius:8px;padding:10px 12px}
 .ai-card{padding:0}
-.ai-period-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap}
-.ai-period-side{display:flex;align-items:center;gap:8px}
 .ai-scroll{padding:16px 20px;display:flex;flex-direction:column;gap:10px}
 .ai-msg{max-width:92%;padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.6}
 .ai-msg.user{max-width:78%;align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:4px}
@@ -580,7 +578,10 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-msg-image{display:block;max-width:220px;max-height:220px;border-radius:8px;margin-bottom:6px}
 .ai-hint{padding:0 20px 14px;display:block}
 @media (max-width: 820px){ .ai-desc,.ai-hint{display:none} }
-.ai-tab-bar{padding:0 20px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ai-tab-bar{padding:0 20px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ai-period-select{height:32px;border:1px solid var(--border-strong);border-radius:7px;background:var(--surface);padding:0 8px;outline:none;color:inherit;font:inherit;font-size:13px}
+#aiClear,#aiLedgerClear{margin-left:auto}
+.ai-tags-row{display:flex;align-items:center;gap:0;flex-wrap:wrap;padding:0 20px 14px}
 .ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
 .ai-pending .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
 .ai-pending .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
@@ -2905,33 +2906,29 @@ function aiBubble(m){
 }
 function renderAi(){
   const main = document.getElementById('main');
+  const isLedger = state.aiTab === 'ledger';
+  const messages = isLedger ? state.aiLedger.messages : state.ai.messages;
   const header = `
     <div class="header"><div>
       <button class="back" data-back>‹ 勘定科目一覧</button>
       <h1 class="title">AIアシスタント</h1>
-      <div class="desc ai-desc">${state.aiTab === 'ledger' ? 'チャットでの指示をもとに、取引をGnuCash Webに記録します' : '集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します'}</div>
+      <div class="desc ai-desc">${isLedger ? 'チャットでの指示をもとに、取引をGnuCash Webに記録します' : '集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します'}</div>
     </div></div>
     <div class="ai-tab-bar">
       <div class="chips" role="tablist">${AI_TABS.map(([k,l]) => `<button class="chip ${state.aiTab===k?'on':''}" data-ai-tab="${k}">${l}</button>`).join('')}</div>
-      ${state.aiTab === 'ledger' && state.aiLedger.messages.length ? '<button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>' : ''}
-    </div>`;
+      ${!isLedger ? `<select class="ai-period-select" id="aiPeriodSelect" aria-label="集計期間">${AI_PERIODS.map(([k,l]) => `<option value="${k}" ${state.ai.period===k?'selected':''}>${l}</option>`).join('')}</select>` : ''}
+      ${messages.length ? `<button type="button" class="btn ghost" id="${isLedger ? 'aiLedgerClear' : 'aiClear'}">会話をクリア</button>` : ''}
+    </div>
+    ${!isLedger && state.aiIncludeTxDetails ? `<div class="ai-tags-row"><span class="tag">説明・メモを含む</span></div>` : ''}`;
   main.innerHTML = header + (state.aiTab === 'ledger' ? renderAiLedgerBody() : renderAiAnalysisBody());
 }
 function renderAiAnalysisBody(){
   const st = state.ai;
-  const detailOn = state.aiIncludeTxDetails;
-  const detailNote = detailOn
+  const detailNote = state.aiIncludeTxDetails
     ? `取引の説明・メモ（最大${aiTxLimit(st.period)}件）も含めて送信します。個人情報が含まれる場合があるのでご注意ください。`
     : '個別の取引の説明・メモは送信されません。';
   return `
     <div class="card ai-card">
-      <div class="ai-period-bar">
-        <div class="chips" role="tablist">${AI_PERIODS.map(([k,l]) => `<button class="chip ${st.period===k?'on':''}" data-ai-period="${k}">${l}</button>`).join('')}</div>
-        <div class="ai-period-side">
-          ${detailOn ? '<span class="tag">説明・メモを含む</span>' : ''}
-          ${st.messages.length ? '<button type="button" class="btn ghost" id="aiClear">会話をクリア</button>' : ''}
-        </div>
-      </div>
       <div class="scroll ai-scroll" id="scroll" data-account="__ai">
         ${st.messages.length ? st.messages.map(aiBubble).join('') : `
           <div class="ai-empty">
@@ -3722,7 +3719,6 @@ main.addEventListener('click', e => {
   if (t.closest('#aiPendingConfirm')) return confirmAiPending();
   if (t.closest('#aiPendingCancel')) { cancelAiPending(); return; }
   const aiTab = t.closest('[data-ai-tab]'); if (aiTab) { state.aiTab = aiTab.dataset.aiTab; render(); return; }
-  const aip = t.closest('[data-ai-period]'); if (aip) { state.ai.period = aip.dataset.aiPeriod; render(); return; }
   if (t.closest('[data-settings]')) return openSettings();
   if (t.closest('[data-copy-key]')) { copyMcpKey(); return; }
   const delKey = t.closest('[data-del-mcp-key]');
@@ -3896,6 +3892,7 @@ main.addEventListener('change', e => {
   if (e.target.id === 'statsFrom') { state.stats.from = e.target.value || state.stats.from; render(); return; }
   if (e.target.id === 'statsTo') { state.stats.to = e.target.value || state.stats.to; render(); return; }
   if (e.target.id === 'themeSelect') return setTheme(e.target.value);
+  if (e.target.id === 'aiPeriodSelect') { state.ai.period = e.target.value; render(); return; }
   if (e.target.id === 'mcpEnabledToggle') return setMcpEnabled(e.target.checked);
   if (e.target.id === 'aiIncludeTxDetailsToggle') return setAiIncludeTxDetails(e.target.checked);
   if (e.target.name !== 'desc') return;
