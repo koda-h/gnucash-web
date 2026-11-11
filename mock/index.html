@@ -565,9 +565,6 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-composer input,.ai-composer textarea{flex:1;border:1px solid var(--border-strong);border-radius:8px;background:var(--surface);outline:none;min-width:0;font:inherit;font-size:16px;color:inherit}
 .ai-composer input{height:36px;padding:0 11px}
 .ai-composer textarea{min-height:36px;max-height:160px;padding:8px 11px;line-height:1.4;resize:none;overflow-y:auto}
-/* 横幅が狭いと placeholder が2行に折り返されるため、入力欄の最小高さを広げて隠れないようにする
-   （min-height はあくまで下限なので、実際に複数行入力したときの自動拡張の邪魔にはならない） */
-@media (max-width: 820px){ .ai-composer textarea{min-height:60px} }
 .ai-composer input:focus,.ai-composer textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .ai-composer button{flex-shrink:0}
 /* 記帳タブ：レシート画像添付（.ai-composer-wrap で囲い、枠線はラッパー側に持たせて
@@ -582,7 +579,8 @@ form.busy{opacity:.6;pointer-events:none}
 .ai-image-chip button{border:0;background:var(--surface-2);color:var(--muted);width:22px;height:22px;border-radius:50%;display:grid;place-items:center;cursor:pointer;flex-shrink:0}
 .ai-msg-image{display:block;max-width:220px;max-height:220px;border-radius:8px;margin-bottom:6px}
 .ai-hint{padding:0 20px 14px;display:block}
-.ai-tab-bar{padding:0 20px 14px}
+@media (max-width: 820px){ .ai-desc,.ai-hint{display:none} }
+.ai-tab-bar{padding:0 20px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .ai-pending{margin-top:4px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--surface-2)}
 .ai-pending .lbl{font-weight:600;font-size:13px;margin-bottom:6px}
 .ai-pending .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
@@ -2911,10 +2909,11 @@ function renderAi(){
     <div class="header"><div>
       <button class="back" data-back>‹ 勘定科目一覧</button>
       <h1 class="title">AIアシスタント</h1>
-      <div class="desc">${state.aiTab === 'ledger' ? 'チャットでの指示をもとに、取引をGnuCash Webに記録します' : '集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します'}</div>
+      <div class="desc ai-desc">${state.aiTab === 'ledger' ? 'チャットでの指示をもとに、取引をGnuCash Webに記録します' : '集計済みの数値をもとに、AI（Anthropic Claude）が家計の状況について回答します'}</div>
     </div></div>
     <div class="ai-tab-bar">
       <div class="chips" role="tablist">${AI_TABS.map(([k,l]) => `<button class="chip ${state.aiTab===k?'on':''}" data-ai-tab="${k}">${l}</button>`).join('')}</div>
+      ${state.aiTab === 'ledger' && state.aiLedger.messages.length ? '<button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>' : ''}
     </div>`;
   main.innerHTML = header + (state.aiTab === 'ledger' ? renderAiLedgerBody() : renderAiAnalysisBody());
 }
@@ -2943,7 +2942,7 @@ function renderAiAnalysisBody(){
         ${st.loading ? '<div class="ai-msg assistant ai-typing"><span></span><span></span><span></span></div>' : ''}
       </div>
       <form class="ai-composer" data-form="ai-chat" autocomplete="off">
-        <textarea name="msg" rows="1" placeholder="質問を入力（例：貯金を増やすには？）　Shift+Enterで改行" autocomplete="off" ${st.loading ? 'disabled' : ''}></textarea>
+        <textarea name="msg" rows="1" placeholder="例：貯金を増やすには？" autocomplete="off" ${st.loading ? 'disabled' : ''}></textarea>
         <button type="submit" class="btn primary" ${st.loading ? 'disabled' : ''}>送信</button>
       </form>
       <div class="hint ai-hint">※ イメージ確認用のダミー回答です。会話は直近20往復分のみ保存されます。</div>
@@ -2956,9 +2955,6 @@ function renderAiLedgerBody(){
   const dis = st.loading || !writable;
   return `
     <div class="card ai-card">
-      ${st.messages.length ? `<div class="ai-period-bar" style="justify-content:flex-end">
-        <button type="button" class="btn ghost" id="aiLedgerClear">会話をクリア</button>
-      </div>` : ''}
       <div class="scroll ai-scroll" id="scroll" data-account="__ailedger">
         ${!writable ? `<div class="readonly-note">${state.book.readOnly ? '読み取り専用モードのため記帳できません' : 'GnuCash デスクトップのロック中のため記帳できません'}</div>` : ''}
         ${st.messages.length ? st.messages.map(aiBubble).join('') : `
@@ -2978,7 +2974,7 @@ function renderAiLedgerBody(){
         <form class="ai-composer" data-form="ai-ledger-chat" autocomplete="off">
           <input type="file" id="aiLedgerImageInput" accept="image/*" hidden ${dis ? 'disabled' : ''}>
           <button type="button" class="ai-attach-btn" data-ai-image-pick title="レシート画像を添付" aria-label="レシート画像を添付" ${dis ? 'disabled' : ''}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
-          <textarea name="msg" rows="1" placeholder="例：食費 500円　Shift+Enterで改行" autocomplete="off" ${dis ? 'disabled' : ''}></textarea>
+          <textarea name="msg" rows="1" placeholder="例：食費 500円" autocomplete="off" ${dis ? 'disabled' : ''}></textarea>
           <button type="submit" class="btn primary" ${dis ? 'disabled' : ''}>送信</button>
         </form>
       </div>
